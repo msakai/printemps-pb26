@@ -1,3 +1,6 @@
 [submodule "printemps"]
 	path = printemps
 	url = https://github.com/snowberryfield/printemps.git
+[submodule "Exact"]
+	path = Exact
+	url = https://gitlab.com/nonfiction-software/exact.git
