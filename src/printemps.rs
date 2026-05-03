@@ -147,9 +147,10 @@ pub fn run(cfg: PrintempsConfig<'_>) -> std::io::Result<PrintempsRun> {
     cfg.child_slot.clear();
     let _ = stderr_thread.join();
 
-    let verdict = last_s_line
-        .as_deref()
-        .map_or(PrintempsVerdict::Unknown, PrintempsVerdict::from_status_line);
+    let verdict = last_s_line.as_deref().map_or(
+        PrintempsVerdict::Unknown,
+        PrintempsVerdict::from_status_line,
+    );
 
     Ok(PrintempsRun {
         verdict,
