@@ -247,7 +247,7 @@ fn run() -> Result<(), String> {
         exact::Verdict::OptimumFound => true,
         exact::Verdict::Unsatisfiable => true,
         exact::Verdict::Satisfiable => !opb_info.has_objective,
-        exact::Verdict::Unknown | exact::Verdict::NoStatus => false,
+        exact::Verdict::Unknown => false,
     };
 
     if is_final {
@@ -313,9 +313,7 @@ fn run() -> Result<(), String> {
     // Fallback: PRINTEMPS produced no feasible solution but Exact captured one.
     let needs_fallback = matches!(
         p_run.verdict,
-        printemps::PrintempsVerdict::Unknown
-            | printemps::PrintempsVerdict::Unsupported
-            | printemps::PrintempsVerdict::NoStatus
+        printemps::PrintempsVerdict::Unknown | printemps::PrintempsVerdict::Unsupported
     ) && exact_run.last_v_line.is_some();
 
     if needs_fallback {
@@ -351,7 +349,7 @@ fn emit_best_after_interrupt(exact_run: &exact::ExactRun) -> Result<(), String> 
                 writeln!(h, "{}", v).map_err(|e| e.to_string())?;
             }
         }
-        exact::Verdict::Unknown | exact::Verdict::NoStatus => {
+        exact::Verdict::Unknown => {
             if let Some(ref v) = exact_run.last_v_line {
                 writeln!(h, "s SATISFIABLE").map_err(|e| e.to_string())?;
                 writeln!(h, "{}", v).map_err(|e| e.to_string())?;

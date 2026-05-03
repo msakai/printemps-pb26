@@ -12,7 +12,6 @@ pub enum PrintempsVerdict {
     Unsatisfiable,
     Unknown,
     Unsupported,
-    NoStatus,
 }
 
 impl PrintempsVerdict {
@@ -24,12 +23,10 @@ impl PrintempsVerdict {
             PrintempsVerdict::Unsatisfiable
         } else if payload.starts_with("s UNSUPPORTED") {
             PrintempsVerdict::Unsupported
-        } else if payload.starts_with("s UNKNOWN") {
-            PrintempsVerdict::Unknown
-        } else if payload.starts_with("s ") {
-            PrintempsVerdict::Unknown
         } else {
-            PrintempsVerdict::NoStatus
+            // `s UNKNOWN`, an unfamiliar `s ...`, or no `s` line at all all
+            // collapse to Unknown.
+            PrintempsVerdict::Unknown
         }
     }
 }
@@ -150,10 +147,9 @@ pub fn run(cfg: PrintempsConfig<'_>) -> std::io::Result<PrintempsRun> {
     cfg.child_slot.clear();
     let _ = stderr_thread.join();
 
-    let verdict = match last_s_line.as_deref() {
-        Some(line) => PrintempsVerdict::from_status_line(line),
-        None => PrintempsVerdict::NoStatus,
-    };
+    let verdict = last_s_line
+        .as_deref()
+        .map_or(PrintempsVerdict::Unknown, PrintempsVerdict::from_status_line);
 
     Ok(PrintempsRun {
         verdict,

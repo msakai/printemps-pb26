@@ -13,7 +13,6 @@ pub enum Verdict {
     Unsatisfiable,
     Satisfiable,
     Unknown,
-    NoStatus,
 }
 
 impl Verdict {
@@ -25,12 +24,10 @@ impl Verdict {
             Verdict::Unsatisfiable
         } else if payload.starts_with("s SATISFIABLE") {
             Verdict::Satisfiable
-        } else if payload.starts_with("s UNKNOWN") {
-            Verdict::Unknown
-        } else if payload.starts_with("s ") {
-            Verdict::Unknown
         } else {
-            Verdict::NoStatus
+            // Anything else (`s UNKNOWN`, an unfamiliar `s ...`, or no `s`
+            // line at all) collapses to Unknown.
+            Verdict::Unknown
         }
     }
 }
@@ -155,10 +152,9 @@ pub fn run(cfg: ExactConfig<'_>) -> std::io::Result<ExactRun> {
     cfg.child_slot.clear();
     let _ = stderr_thread.join();
 
-    let verdict = match last_s_line.as_deref() {
-        Some(line) => Verdict::from_status_line(line),
-        None => Verdict::NoStatus,
-    };
+    let verdict = last_s_line
+        .as_deref()
+        .map_or(Verdict::Unknown, Verdict::from_status_line);
     let exit_code = status.code();
     let elapsed_sec = started.elapsed().as_secs_f64();
 
@@ -220,7 +216,6 @@ fn write_bounds_json(
         Verdict::Unsatisfiable => "UNSATISFIABLE",
         Verdict::Satisfiable => "SATISFIABLE",
         Verdict::Unknown => "UNKNOWN",
-        Verdict::NoStatus => "NO_STATUS",
     };
     let primal_repr = match primal {
         Some(s) => format!("\"{}\"", escape_json(s)),
