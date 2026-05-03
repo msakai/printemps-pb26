@@ -32,8 +32,8 @@ fn print_usage() {
          Options:\n  \
            --exact-time SEC        Time budget for the Exact phase (default: {default_exact}s).\n  \
            -t, --time-max SEC      Overall time budget; PRINTEMPS uses what's left.\n  \
-           --exact-path PATH       Path to the Exact binary (default: ./Exact/build/Exact).\n  \
-           --printemps-path PATH   Path to pb_competition_2025_solver\n                          (default: ./printemps/build/extra/Release/pb_competition_2025_solver).\n  \
+           --exact-path PATH       Path to the Exact binary (default: ./bin/Exact).\n  \
+           --printemps-path PATH   Path to pb_competition_2025_solver\n                          (default: ./bin/pb_competition_2025_solver).\n  \
            --save-dir DIR          Directory for state files (default: ./.pb26-state).\n  \
            -r, --seed N            Random seed forwarded to both solvers.\n  \
            -j, --threads N         Number of threads forwarded to both solvers.\n  \
@@ -161,14 +161,14 @@ fn default_exact_path() -> PathBuf {
     if let Ok(p) = env::var("PB26_EXACT") {
         return PathBuf::from(p);
     }
-    PathBuf::from("./Exact/build/Exact")
+    PathBuf::from("./bin/Exact")
 }
 
 fn default_printemps_path() -> PathBuf {
     if let Ok(p) = env::var("PB26_PRINTEMPS") {
         return PathBuf::from(p);
     }
-    PathBuf::from("./printemps/build/extra/Release/pb_competition_2025_solver")
+    PathBuf::from("./bin/pb_competition_2025_solver")
 }
 
 fn driver_log(verbose: bool, msg: &str) {
