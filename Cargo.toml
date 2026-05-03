@@ -1,12 +1,12 @@
 [package]
-name = "pb26-hybrid"
+name = "pb-hybrid"
 version = "0.1.0"
 edition = "2021"
-description = "Hybrid PRINTEMPS + Exact driver for the Pseudo Boolean Competition 2026"
+description = "Hybrid PRINTEMPS + Exact driver for Pseudo Boolean Competitions"
 license = "MIT"
 
 [[bin]]
-name = "pb26-hybrid"
+name = "pb-hybrid"
 path = "src/main.rs"
 
 [dependencies]

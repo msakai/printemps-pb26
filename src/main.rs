@@ -26,15 +26,15 @@ struct Args {
 }
 
 fn print_usage() {
-    eprintln!("\npb26-hybrid: PRINTEMPS + Exact hybrid driver for PB Competition 2026\n");
+    eprintln!("\npb-hybrid: PRINTEMPS + Exact hybrid driver for PB Competitions\n");
     eprintln!(
-        "Usage: pb26-hybrid [OPTIONS] <instance.opb>\n\n\
+        "Usage: pb-hybrid [OPTIONS] <instance.opb>\n\n\
          Options:\n  \
            --exact-time SEC        Time budget for the Exact phase (default: {default_exact}s).\n  \
            -t, --time-max SEC      Overall time budget; PRINTEMPS uses what's left.\n  \
            --exact-path PATH       Path to the Exact binary (default: ./bin/Exact).\n  \
            --printemps-path PATH   Path to pb_competition_2025_solver\n                          (default: ./bin/pb_competition_2025_solver).\n  \
-           --save-dir DIR          Directory for state files (default: ./.pb26-state).\n  \
+           --save-dir DIR          Directory for state files (default: ./.pb-state).\n  \
            -r, --seed N            Random seed forwarded to both solvers.\n  \
            -j, --threads N         Number of threads forwarded to both solvers.\n  \
            --exact-arg ARG         Extra argument to forward to Exact (repeatable).\n  \
@@ -158,14 +158,14 @@ fn next_arg(argv: &[String], i: &mut usize, name: &str) -> Result<String, String
 }
 
 fn default_exact_path() -> PathBuf {
-    if let Ok(p) = env::var("PB26_EXACT") {
+    if let Ok(p) = env::var("PB_EXACT") {
         return PathBuf::from(p);
     }
     PathBuf::from("./bin/Exact")
 }
 
 fn default_printemps_path() -> PathBuf {
-    if let Ok(p) = env::var("PB26_PRINTEMPS") {
+    if let Ok(p) = env::var("PB_PRINTEMPS") {
         return PathBuf::from(p);
     }
     PathBuf::from("./bin/pb_competition_2025_solver")
@@ -173,7 +173,7 @@ fn default_printemps_path() -> PathBuf {
 
 fn driver_log(verbose: bool, msg: &str) {
     if verbose {
-        eprintln!("[pb26-hybrid] {msg}");
+        eprintln!("[pb-hybrid] {msg}");
     }
 }
 
@@ -222,7 +222,7 @@ fn run() -> Result<(), String> {
     let incumbent_pb_path = args.save_dir.join("exact_incumbent_pb.txt");
     let incumbent_sol_path = args.save_dir.join("exact_incumbent.sol");
 
-    println!("c pb26-hybrid: phase 1 (Exact, budget={:.3}s)", exact_budget);
+    println!("c pb-hybrid: phase 1 (Exact, budget={:.3}s)", exact_budget);
     let exact_run = exact::run(exact::ExactConfig {
         exact_path: &args.exact_path,
         instance: &args.instance,
@@ -276,7 +276,7 @@ fn run() -> Result<(), String> {
         Some(t) => {
             let remaining = t - elapsed_total;
             if remaining <= 0.0 {
-                println!("c pb26-hybrid: overall time budget already exhausted before PRINTEMPS");
+                println!("c pb-hybrid: overall time budget already exhausted before PRINTEMPS");
                 return Ok(());
             }
             Some(remaining)
@@ -287,8 +287,8 @@ fn run() -> Result<(), String> {
     let p_log_path = args.save_dir.join("printemps_log.txt");
 
     match printemps_time {
-        Some(t) => println!("c pb26-hybrid: phase 2 (PRINTEMPS, budget={:.3}s)", t),
-        None => println!("c pb26-hybrid: phase 2 (PRINTEMPS, no time limit)"),
+        Some(t) => println!("c pb-hybrid: phase 2 (PRINTEMPS, budget={:.3}s)", t),
+        None => println!("c pb-hybrid: phase 2 (PRINTEMPS, no time limit)"),
     }
     let p_run = printemps::run(printemps::PrintempsConfig {
         solver_path: &args.printemps_path,
@@ -321,7 +321,7 @@ fn run() -> Result<(), String> {
     if needs_fallback {
         let v = exact_run.last_v_line.as_deref().unwrap();
         printemps::emit_fallback(
-            "pb26-hybrid: PRINTEMPS did not improve; falling back to Exact incumbent",
+            "pb-hybrid: PRINTEMPS did not improve; falling back to Exact incumbent",
             v,
         )
         .map_err(|e| format!("failed to emit fallback: {e}"))?;
@@ -367,7 +367,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::from(0),
         Err(msg) => {
-            eprintln!("pb26-hybrid: error: {msg}");
+            eprintln!("pb-hybrid: error: {msg}");
             ExitCode::from(1)
         }
     }

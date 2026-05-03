@@ -275,5 +275,5 @@ fn write_printemps_initial_solution(path: &Path, v_line: &str) -> std::io::Resul
 }
 
 pub fn default_save_dir() -> PathBuf {
-    PathBuf::from(".pb26-state")
+    PathBuf::from(".pb-state")
 }

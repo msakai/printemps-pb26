@@ -63,7 +63,7 @@ pub fn install_forwarder() -> (ChildSlot, InterruptFlag) {
         .expect("failed to install signal handlers");
 
     thread::Builder::new()
-        .name("pb26-signal-forwarder".to_string())
+        .name("pb-signal-forwarder".to_string())
         .spawn(move || {
             for sig in signals.forever() {
                 let nix_sig = match sig {
