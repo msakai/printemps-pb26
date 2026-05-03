@@ -254,7 +254,9 @@ fn escape_json(s: &str) -> String {
 /// option, written to `path`.
 fn write_printemps_initial_solution(path: &Path, v_line: &str) -> std::io::Result<()> {
     let mut f = File::create(path)?;
-    let payload = v_line.strip_prefix("v ").unwrap_or(v_line.trim_start_matches('v'));
+    let payload = v_line
+        .strip_prefix("v ")
+        .unwrap_or(v_line.trim_start_matches('v'));
     for tok in payload.split_whitespace() {
         let (name, val) = if let Some(rest) = tok.strip_prefix('-') {
             (rest, 0)

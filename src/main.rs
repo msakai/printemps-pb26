@@ -182,10 +182,16 @@ fn run() -> Result<(), String> {
     let started = Instant::now();
 
     if !args.instance.exists() {
-        return Err(format!("instance file not found: {}", args.instance.display()));
+        return Err(format!(
+            "instance file not found: {}",
+            args.instance.display()
+        ));
     }
     if !args.exact_path.exists() {
-        return Err(format!("Exact binary not found: {}", args.exact_path.display()));
+        return Err(format!(
+            "Exact binary not found: {}",
+            args.exact_path.display()
+        ));
     }
     if !args.printemps_path.exists() {
         return Err(format!(
@@ -260,7 +266,10 @@ fn run() -> Result<(), String> {
     // the request and skip the PRINTEMPS phase. Whatever incumbent Exact has
     // is the best answer we can give.
     if interrupt_flag.is_set() {
-        driver_log(args.verbose, "interrupt received during phase 1; skipping PRINTEMPS");
+        driver_log(
+            args.verbose,
+            "interrupt received during phase 1; skipping PRINTEMPS",
+        );
         emit_best_after_interrupt(&exact_run)?;
         return Ok(());
     }

@@ -59,8 +59,8 @@ pub fn install_forwarder() -> (ChildSlot, InterruptFlag) {
     let slot_for_thread = slot.clone();
     let flag_for_thread = flag.clone();
 
-    let mut signals = Signals::new([SIGINT, SIGTERM, SIGXCPU])
-        .expect("failed to install signal handlers");
+    let mut signals =
+        Signals::new([SIGINT, SIGTERM, SIGXCPU]).expect("failed to install signal handlers");
 
     thread::Builder::new()
         .name("pb-signal-forwarder".to_string())

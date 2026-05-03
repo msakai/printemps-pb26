@@ -20,8 +20,12 @@ pub fn scan<P: AsRef<Path>>(path: P) -> io::Result<OpbInfo> {
             continue;
         }
         if trimmed.starts_with("min:") || trimmed.starts_with("min ") {
-            return Ok(OpbInfo { has_objective: true });
+            return Ok(OpbInfo {
+                has_objective: true,
+            });
         }
     }
-    Ok(OpbInfo { has_objective: false })
+    Ok(OpbInfo {
+        has_objective: false,
+    })
 }
