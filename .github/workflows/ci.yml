@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: build (linux x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake libboost-dev
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo clippy
+        run: cargo clippy --release --all-targets -- -D warnings
+
+      - name: Build Exact + PRINTEMPS + driver
+        run: ./build.sh
+
+      - name: Package
+        run: |
+          STAGE="pb-hybrid-linux-x86_64"
+          mkdir -p "$STAGE/bin"
+          cp bin/Exact bin/pb_competition_2025_solver bin/pb-hybrid "$STAGE/bin/"
+          cp LICENSE README.md "$STAGE/"
+          cp Exact/LICENSE "$STAGE/EXACT_LICENSE"
+          cp printemps/LICENSE "$STAGE/PRINTEMPS_LICENSE"
+          {
+            echo "Source repository: ${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-}"
+            echo "Driver commit:    ${GITHUB_SHA:-}"
+            echo "Exact commit:     $(git -C Exact rev-parse HEAD)"
+            echo "PRINTEMPS commit: $(git -C printemps rev-parse HEAD)"
+          } > "$STAGE/BUILD_INFO.txt"
+          tar -czf "$STAGE.tar.gz" "$STAGE"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pb-hybrid-linux-x86_64
+          path: pb-hybrid-linux-x86_64.tar.gz
+          if-no-files-found: error
