@@ -49,6 +49,7 @@ pub struct PrintempsConfig<'a> {
     pub solver_path: &'a Path,
     pub instance: &'a Path,
     pub time_max: Option<f64>,
+    pub iteration_max: Option<i64>,
     pub seed: Option<i64>,
     pub threads: Option<i32>,
     pub extra_args: &'a [String],
@@ -66,6 +67,9 @@ pub fn run(cfg: PrintempsConfig<'_>) -> std::io::Result<PrintempsRun> {
     let mut command = Command::new(cfg.solver_path);
     if let Some(t) = cfg.time_max {
         command.arg("-t").arg(format!("{}", t));
+    }
+    if let Some(k) = cfg.iteration_max {
+        command.arg("-k").arg(format!("{}", k));
     }
     if let Some(s) = cfg.seed {
         command.arg("-r").arg(format!("{}", s));

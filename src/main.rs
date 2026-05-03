@@ -294,6 +294,7 @@ fn run() -> Result<(), String> {
         solver_path: &args.printemps_path,
         instance: &args.instance,
         time_max: printemps_time,
+        iteration_max: Some(-1),
         seed: args.seed,
         threads: args.threads,
         extra_args: &args.extra_printemps,
