@@ -31,3 +31,8 @@ cp -f "$ROOT/target/release/pb-hybrid" "$ROOT/bin/"
 
 echo "[pb] artifacts:"
 ls -l "$ROOT/bin"
+
+echo "[pb] linkage:"
+for f in "$ROOT/bin/Exact" "$ROOT/bin/pb_competition_2025_solver" "$ROOT/bin/pb-hybrid"; do
+  file "$f"
+done
