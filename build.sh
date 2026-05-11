@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 STATIC="${STATIC:-ON}"
+CPU_ARCH="${CPU_ARCH:-native}"
 
 echo "[pb] STATIC=$STATIC"
 
@@ -15,7 +16,7 @@ mkdir -p "$ROOT/Exact/build"
   && cmake --build . -- -j"$JOBS" )
 
 echo "[pb] building PRINTEMPS pb_competition_2025_solver"
-( cd "$ROOT/printemps" && make -f makefile/Makefile.extra STATIC="$STATIC" -j"$JOBS" )
+( cd "$ROOT/printemps" && make -f makefile/Makefile.extra STATIC="$STATIC" CPU_ARCH="$CPU_ARCH" -j"$JOBS" )
 
 echo "[pb] building driver"
 if [ "$STATIC" = "ON" ]; then
