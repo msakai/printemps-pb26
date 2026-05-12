@@ -306,6 +306,7 @@ fn run() -> Result<(), String> {
         iteration_max: Some(-1),
         seed: args.seed,
         threads: args.threads,
+        initial_solution: Some(incumbent_sol_path.as_path()),
         extra_args: &args.extra_printemps,
         log_path: &p_log_path,
         child_slot: &child_slot,

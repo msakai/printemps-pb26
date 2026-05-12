@@ -49,6 +49,7 @@ pub struct PrintempsConfig<'a> {
     pub iteration_max: Option<i64>,
     pub seed: Option<i64>,
     pub threads: Option<i32>,
+    pub initial_solution: Option<&'a Path>,
     pub extra_args: &'a [String],
     pub log_path: &'a Path,
     pub child_slot: &'a ChildSlot,
@@ -73,6 +74,11 @@ pub fn run(cfg: PrintempsConfig<'_>) -> std::io::Result<PrintempsRun> {
     }
     if let Some(j) = cfg.threads {
         command.arg("-j").arg(format!("{}", j));
+    }
+    if let Some(p) = cfg.initial_solution {
+        if p.exists() {
+            command.arg("-i").arg(p);
+        }
     }
     command
         .args(cfg.extra_args)
