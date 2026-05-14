@@ -9,6 +9,32 @@ on a decision instance), hands the same instance over to PRINTEMPS' bundled
 [pbcomp]: https://www.cril.univ-artois.fr/PB26/
 [exact]: https://gitlab.com/nonfiction-software/exact
 
+## Solver information
+
+### Solver suggested command line	
+
+```
+bin/pb-hybrid --exact-path DIR/bin/pb-hybrid --printemps-path DIR/bin/pb_competition_2025_solver -t TIMEOUT --seed RANDOMSEED --j NBCORE  BENCHNAME
+```
+
+### Complete or not?
+* ☐ Complete (your solver can answer UNSATISFIABLE)
+* ☑ Incomplete (your solver can find solutions but cannot prove that there is no solution)
+
+### VeriPB unchecked deletion
+* ☐ use unchecked deletion mode for VeriPB (only relevant in the *-CERT tracks, for solvers generating UNSAT/OPT proofs)
+
+### Categories of benchmarks
+
+* ☑ DEC-LIN (decision problem, linear constraints, no UNSAT certificate)
+* ☐ DEC-LIN-CERT (decision problem, linear constraints, UNSAT certificate required)
+* ☑ DEC-NLC (decision problem, non-linear constraints, no UNSAT certificate)
+* ☑ OPT-LIN (optimization problem, linear constraints, no OPT/UNSAT certificate)
+* ☐ OPT-LIN-CERT (optimization problem, linear constraints, OPT/UNSAT certificate required)
+* ☑ OPT-NLC (optimization problem, non-linear constraints, no OPT/UNSAT certificate)
+* ☑ PARTIAL-LIN (WBO, both soft and hard constraints, linear constraints)
+* ☑ SOFT-LIN (WBO, only soft constraints, linear constraints)
+
 ## Layout
 
 | Path | Description |
