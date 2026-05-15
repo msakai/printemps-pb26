@@ -18,7 +18,7 @@ DIR/bin/pb_competition_2025_solver -k -1 -t TIMEOUT -j NBCORE -r RANDOMSEED BENC
 
 Hybrid solver (Exact + PRINTEMPS):
 ```
-DIR/bin/pb-hybrid --exact-path DIR/bin/Exact --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE BENCHNAME
+DIR/bin/exact-printemps --exact-path DIR/bin/Exact --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE BENCHNAME
 ```
 
 ### Complete or not?
@@ -43,7 +43,7 @@ DIR/bin/pb-hybrid --exact-path DIR/bin/Exact --printemps-path DIR/bin/pb_competi
 
 | Path | Description |
 |------|-------------|
-| `src/`             | Rust driver source (`pb-hybrid`). |
+| `src/`             | Rust driver source (`exact-printemps`). |
 | `Exact/`           | Submodule: Exact (AGPL-3.0). |
 | `printemps/`       | Submodule: PRINTEMPS (MIT). |
 | `build.sh`         | Builds all three components and copies binaries to `bin/`. |
@@ -63,11 +63,11 @@ After a successful build:
 bin/
 ├── Exact                          # AGPLv3, sources under Exact/
 ├── pb_competition_2025_solver     # MIT, sources under printemps/
-└── pb-hybrid                      # MIT, sources under src/
+└── exact-printemps                # MIT, sources under src/
 ```
 
 By default `build.sh` links all three binaries statically (Exact and
-`pb_competition_2025_solver` via `-static`, `pb-hybrid` via Rust's
+`pb_competition_2025_solver` via `-static`, `exact-printemps` via Rust's
 `+crt-static`) so the artifacts in `bin/` can be copied to other Linux
 hosts without matching the build host's libc/libstdc++/libgomp versions.
 The build needs the corresponding static archives (e.g. `libc6-dev`,

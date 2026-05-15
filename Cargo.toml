@@ -2,11 +2,11 @@
 name = "pb-hybrid"
 version = "0.1.0"
 edition = "2021"
-description = "Hybrid PRINTEMPS + Exact driver for Pseudo Boolean Competitions"
+description = "Hybrid Exact + PRINTEMPS driver for Pseudo Boolean Competitions"
 license = "MIT"
 
 [[bin]]
-name = "pb-hybrid"
+name = "exact-printemps"
 path = "src/main.rs"
 
 [dependencies]
