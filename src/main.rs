@@ -23,6 +23,7 @@ struct Args {
     extra_exact: Vec<String>,
     extra_printemps: Vec<String>,
     verbose: bool,
+    use_fixed_literals: bool,
 }
 
 fn print_usage() {
@@ -39,6 +40,7 @@ fn print_usage() {
            -j, --threads N         Number of threads forwarded to both solvers.\n  \
            --exact-arg ARG         Extra argument to forward to Exact (repeatable).\n  \
            --printemps-arg ARG     Extra argument to forward to PRINTEMPS (repeatable).\n  \
+           --use-fixed-literals    Read ` c fixed <signed-int>` lines from Exact's\n                          output and forward them to PRINTEMPS via `-f`\n                          (default: disabled).\n  \
            --verbose               Enable driver-level logs on stderr.\n  \
            -h, --help              Show this help and exit.\n",
         default_exact = DEFAULT_EXACT_TIME_SEC
@@ -58,6 +60,7 @@ fn parse_args() -> Result<Args, String> {
     let mut extra_exact: Vec<String> = Vec::new();
     let mut extra_printemps: Vec<String> = Vec::new();
     let mut verbose = false;
+    let mut use_fixed_literals = false;
 
     let mut i = 1;
     while i < argv.len() {
@@ -109,6 +112,10 @@ fn parse_args() -> Result<Args, String> {
                 verbose = true;
                 i += 1;
             }
+            "--use-fixed-literals" => {
+                use_fixed_literals = true;
+                i += 1;
+            }
             x if x.starts_with('-') => {
                 return Err(format!("unknown option: {x}"));
             }
@@ -145,6 +152,7 @@ fn parse_args() -> Result<Args, String> {
         extra_exact,
         extra_printemps,
         verbose,
+        use_fixed_literals,
     })
 }
 
@@ -227,6 +235,7 @@ fn run() -> Result<(), String> {
     let bounds_path = args.save_dir.join("exact_bounds.json");
     let incumbent_pb_path = args.save_dir.join("exact_incumbent_pb.txt");
     let incumbent_sol_path = args.save_dir.join("exact_incumbent.sol");
+    let fixed_literals_path = args.save_dir.join("exact_fixed_literals.txt");
 
     println!(
         "c exact-printemps: phase 1 (Exact, budget={:.3}s)",
@@ -241,6 +250,11 @@ fn run() -> Result<(), String> {
         bounds_path: &bounds_path,
         incumbent_pb_path: &incumbent_pb_path,
         incumbent_sol_path: &incumbent_sol_path,
+        fixed_literals_path: if args.use_fixed_literals {
+            Some(fixed_literals_path.as_path())
+        } else {
+            None
+        },
         child_slot: &child_slot,
     })
     .map_err(|e| format!("Exact phase failed: {e}"))?;
@@ -312,6 +326,11 @@ fn run() -> Result<(), String> {
         seed: args.seed,
         threads: args.threads,
         initial_solution: Some(incumbent_sol_path.as_path()),
+        fixed_variable: if args.use_fixed_literals {
+            Some(fixed_literals_path.as_path())
+        } else {
+            None
+        },
         extra_args: &args.extra_printemps,
         log_path: &p_log_path,
         child_slot: &child_slot,

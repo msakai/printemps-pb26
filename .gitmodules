@@ -3,4 +3,5 @@
 	url = https://github.com/msakai/printemps.git
 [submodule "Exact"]
 	path = Exact
-	url = https://gitlab.com/nonfiction-software/exact.git
+	url = https://github.com/msakai/exact.git
+	branch = claude/log-fixed-literals-7VUQU
