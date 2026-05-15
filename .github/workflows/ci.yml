@@ -41,11 +41,12 @@ jobs:
       - name: Package
         run: |
           STAGE="pb-hybrid-linux-x86_64"
-          mkdir -p "$STAGE/bin"
+          mkdir -p "$STAGE/bin" "$STAGE/src/driver" "$STAGE/src/Exact" "$STAGE/src/printemps"
           cp bin/Exact bin/pb_competition_2025_solver bin/pb-hybrid "$STAGE/bin/"
-          cp LICENSE README.md "$STAGE/"
-          cp Exact/LICENSE "$STAGE/EXACT_LICENSE"
-          cp printemps/LICENSE "$STAGE/PRINTEMPS_LICENSE"
+          cp README.md "$STAGE/"
+          git archive --format=tar HEAD | tar -x -C "$STAGE/src/driver"
+          git -C Exact archive --format=tar HEAD | tar -x -C "$STAGE/src/Exact"
+          git -C printemps archive --format=tar HEAD | tar -x -C "$STAGE/src/printemps"
           {
             echo "Source repository: ${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-}"
             echo "Driver commit:    ${GITHUB_SHA:-}"
