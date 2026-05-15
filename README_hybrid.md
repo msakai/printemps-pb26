@@ -8,7 +8,7 @@ for a heuristic improvement phase.
 ## Usage
 
 ```
-pb-hybrid [OPTIONS] <instance.opb>
+exact-printemps [OPTIONS] <instance.opb>
 
   --exact-time SEC        Time budget for the Exact phase (default: 300s).
   -t, --time-max SEC      Overall time budget; PRINTEMPS uses what's left.
