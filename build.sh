@@ -29,11 +29,3 @@ mkdir -p "$ROOT/bin"
 cp -f "$ROOT/Exact/build/Exact" "$ROOT/bin/"
 cp -f "$ROOT/printemps/build/extra/Release/pb_competition_2025_solver" "$ROOT/bin/"
 cp -f "$ROOT/target/release/exact-printemps" "$ROOT/bin/"
-
-echo "[pb] artifacts:"
-ls -l "$ROOT/bin"
-
-echo "[pb] linkage:"
-for f in "$ROOT/bin/Exact" "$ROOT/bin/pb_competition_2025_solver" "$ROOT/bin/exact-printemps"; do
-  file "$f"
-done

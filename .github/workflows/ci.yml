@@ -38,6 +38,14 @@ jobs:
       - name: Build Exact + PRINTEMPS + driver
         run: CPU_ARCH=broadwell ./build.sh
 
+      - name: Print information about executables
+        run: |
+          ls -l bin
+          for f in bin/Exact bin/pb_competition_2025_solver bin/exact-printemps; do
+            file "$f"
+            ldd "$f"
+          done
+
       - name: Package
         run: |
           STAGE="printemps_pb26"

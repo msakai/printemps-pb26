@@ -73,8 +73,7 @@ hosts without matching the build host's libc/libstdc++/libgomp versions.
 The build needs the corresponding static archives (e.g. `libc6-dev`,
 `libstdc++-*-dev`, `libgomp1` on Debian/Ubuntu, plus `libboost-dev` for
 Exact). Pass `STATIC=OFF ./build.sh` to fall back to dynamic linking if
-those archives are unavailable. The script prints `file(1)` output for
-each artifact at the end so you can confirm the linkage mode.
+those archives are unavailable.
 
 ## Licensing
 
