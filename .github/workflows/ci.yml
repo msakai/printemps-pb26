@@ -40,13 +40,12 @@ jobs:
 
       - name: Package
         run: |
-          STAGE="pb-hybrid-linux-x86_64"
-          mkdir -p "$STAGE/bin" "$STAGE/src/driver" "$STAGE/src/Exact" "$STAGE/src/printemps"
+          STAGE="printemps_pb26"
+          mkdir -p "$STAGE/bin" "$STAGE/Exact" "$STAGE/printemps"
           cp bin/Exact bin/pb_competition_2025_solver bin/pb-hybrid "$STAGE/bin/"
-          cp README.md "$STAGE/"
-          git archive --format=tar HEAD | tar -x -C "$STAGE/src/driver"
-          git -C Exact archive --format=tar HEAD | tar -x -C "$STAGE/src/Exact"
-          git -C printemps archive --format=tar HEAD | tar -x -C "$STAGE/src/printemps"
+          git archive --format=tar HEAD | tar -x -C "$STAGE"
+          git -C Exact archive --format=tar HEAD | tar -x -C "$STAGE/Exact"
+          git -C printemps archive --format=tar HEAD | tar -x -C "$STAGE/printemps"
           {
             echo "Source repository: ${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-}"
             echo "Driver commit:    ${GITHUB_SHA:-}"
@@ -58,6 +57,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pb-hybrid-linux-x86_64
-          path: pb-hybrid-linux-x86_64.tar.gz
+          name: printemps_pb26
+          path: printemps_pb26.tar.gz
           if-no-files-found: error

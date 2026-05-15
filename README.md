@@ -1,20 +1,24 @@
 # PRINTEMPS for Pseudo Boolean Competition 2026
 
-A hybrid solver for the [Pseudo-Boolean Competition 2026][pbcomp].
-It runs [Exact][exact] up to a configurable budget and, if Exact does not
-deliver a final answer (`s OPTIMUM FOUND`, `s UNSATISFIABLE`, or `s SATISFIABLE`
-on a decision instance), hands the same instance over to PRINTEMPS' bundled
-`pb_competition_2025_solver` for a heuristic improvement phase.
+[PRINTEMPS](https://snowberryfield.github.io/printemps/) solver for [Pseudo-Boolean Competition 2026](https://www.cril.univ-artois.fr/PB26/) submission.
 
-[pbcomp]: https://www.cril.univ-artois.fr/PB26/
-[exact]: https://gitlab.com/nonfiction-software/exact
+It contains two versions of solvers:
+
+- PRINTEMPS itself
+- Hybrid solver that combines [Exact](https://gitlab.com/nonfiction-software/exact) and PRINTEMPS (see [README_hybrid.md](README_hybrid.md) for details)
 
 ## Solver information
 
-### Solver suggested command line	
+### Solver suggested command line
 
+PRINTEMPS itself:
 ```
-bin/pb-hybrid --exact-path DIR/bin/pb-hybrid --printemps-path DIR/bin/pb_competition_2025_solver -t TIMEOUT --seed RANDOMSEED --j NBCORE  BENCHNAME
+DIR/bin/pb_competition_2025_solver -k -1 -t TIMEOUT -j NBCORE -r RANDOMSEED BENCHNAME
+```
+
+Hybrid solver (Exact + PRINTEMPS):
+```
+DIR/bin/pb-hybrid --exact-path DIR/bin/Exact --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE BENCHNAME
 ```
 
 ### Complete or not?
@@ -71,62 +75,6 @@ The build needs the corresponding static archives (e.g. `libc6-dev`,
 Exact). Pass `STATIC=OFF ./build.sh` to fall back to dynamic linking if
 those archives are unavailable. The script prints `file(1)` output for
 each artifact at the end so you can confirm the linkage mode.
-
-## Usage
-
-```
-pb-hybrid [OPTIONS] <instance.opb>
-
-  --exact-time SEC        Time budget for the Exact phase (default: 300s).
-  -t, --time-max SEC      Overall time budget; PRINTEMPS uses what's left.
-  --exact-path PATH       Path to the Exact binary (default: ./bin/Exact).
-  --printemps-path PATH   Path to pb_competition_2025_solver
-                          (default: ./bin/pb_competition_2025_solver).
-  --save-dir DIR          Directory for state files (default: ./.pb-state).
-  -r, --seed N            Random seed forwarded to both solvers.
-  -j, --threads N         Number of threads forwarded to both solvers.
-  --exact-arg ARG         Extra argument to forward to Exact (repeatable).
-  --printemps-arg ARG     Extra argument to forward to PRINTEMPS (repeatable).
-  --verbose               Enable driver-level logs on stderr.
-  -h, --help              Show this help and exit.
-```
-
-Both `PB_EXACT` and `PB_PRINTEMPS` environment variables override the
-default solver paths.
-
-### Output behaviour
-
-The driver tees each child solver's stdout to its own stdout in PB
-competition format (`c …`, `o …`, `v …`, `s …`).  The Exact phase additionally
-buffers the trailing `s …` and `v …` lines: if Exact's verdict is final, those
-lines are emitted as the answer; otherwise they are commented out
-(`c exact-final: s SATISFIABLE`, `c exact-incumbent: v x1 -x2 …`) and PRINTEMPS
-takes over.  If PRINTEMPS finishes without a feasible solution while Exact had
-one, the driver falls back to Exact's saved incumbent and emits a final
-`s SATISFIABLE` / `v …` block based on it.
-
-### Persisted state
-
-The Exact phase writes the following under `--save-dir` (default
-`./.pb-state`):
-
-- `exact_log.txt` — full Exact stdout.
-- `exact_log.stderr.log` — full Exact stderr.
-- `exact_incumbent_pb.txt` — the last `v …` line printed by Exact.
-- `exact_incumbent.sol` — the same solution, formatted for PRINTEMPS' `-i`
-  (one `xN VALUE` line per variable).  Reserved for future hand-off; the
-  current PRINTEMPS solver does not yet read it.
-- `exact_bounds.json` — `{ status, primal_bound, elapsed_sec, exit_code }`.
-
-The PRINTEMPS phase writes `printemps_log.txt` and `printemps_log.stderr.log`.
-
-### Signal handling
-
-`SIGINT`, `SIGTERM`, and `SIGXCPU` are caught by the driver and forwarded to
-the active child via `kill(pid, sig)`.  Children are placed in their own
-process group so terminal Ctrl-C does not double-deliver.  Both Exact and
-PRINTEMPS gracefully emit their best-known solution on these signals; the
-driver waits for them to flush before exiting.
 
 ## Licensing
 
