@@ -47,8 +47,7 @@ The Exact phase writes the following under `--save-dir` (default
 - `exact_log.stderr.log` — full Exact stderr.
 - `exact_incumbent_pb.txt` — the last `v …` line printed by Exact.
 - `exact_incumbent.sol` — the same solution, formatted for PRINTEMPS' `-i`
-  (one `xN VALUE` line per variable).  Reserved for future hand-off; the
-  current PRINTEMPS solver does not yet read it.
+  (one `xN VALUE` line per variable).
 - `exact_bounds.json` — `{ status, primal_bound, elapsed_sec, exit_code }`.
 
 The PRINTEMPS phase writes `printemps_log.txt` and `printemps_log.stderr.log`.
