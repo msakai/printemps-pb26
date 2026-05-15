@@ -1,0 +1,133 @@
+# About `scip-printemps`
+
+`scip-printemps` is a two-phase hybrid driver that runs
+[SCIP](https://www.scipopt.org/) (linked in-process via the
+[`russcip`](https://crates.io/crates/russcip) crate) for an initial budget and
+then hands an incumbent solution plus the variables SCIP has proved to be
+fixed (i.e. `lb == ub` at the root after presolve and root processing) over
+to PRINTEMPS' bundled `pb_competition_2025_solver` for a heuristic
+improvement phase.
+
+It is the SCIP-flavoured counterpart of [`exact-printemps`](README_hybrid.md).
+The orchestration is intentionally similar; the only differences are:
+
+- Phase 1 is an in-process SCIP solve, not a subprocess invocation of Exact.
+- The information funnelled to PRINTEMPS goes through a solver-agnostic
+  `SolverHandoff` payload (`src/handoff.rs`) so future bidirectional or
+  alternating compositions can plug in without changing call sites.
+- The handoff carries the **dual bound** in addition to the incumbent and
+  fixed-variable list. PRINTEMPS does not yet consume the dual bound; it is
+  persisted to disk (`scip_bounds.json`) so it can be wired up later.
+
+## Usage
+
+```
+scip-printemps [OPTIONS] <instance.opb>
+
+  --scip-time SEC         Time budget for the SCIP phase (default: 300s).
+  -t, --time-max SEC      Overall time budget; PRINTEMPS uses what's left.
+  --printemps-path PATH   Path to pb_competition_2025_solver
+                          (default: ./bin/pb_competition_2025_solver).
+  --save-dir DIR          Directory for state files (default: ./.pb-scip-state).
+  -r, --seed N            Random seed forwarded to both solvers.
+  -j, --threads N         Number of threads forwarded to PRINTEMPS
+                          (SCIP itself uses the core branch-and-bound
+                          single-threaded; tune SCIP parallelism with
+                          `--scip-arg parallel/maxnthreads=N` if your
+                          build supports it).
+  --scip-arg NAME=VALUE   Extra SCIP parameter (repeatable). The value is
+                          interpreted as bool / int / real / string based
+                          on its lexical form.
+  --printemps-arg ARG     Extra argument to forward to PRINTEMPS (repeatable).
+  --verbose               Enable driver-level logs on stderr.
+  -h, --help              Show this help and exit.
+```
+
+The `PB_PRINTEMPS` environment variable overrides the default PRINTEMPS
+binary path.
+
+## Output behaviour
+
+The driver writes PB-competition output (`c …`, `o …`, `v …`, `s …`) on
+stdout. SCIP's own console messages are suppressed; a textual summary of the
+solve is appended to `<save-dir>/scip_log.txt`.
+
+- If SCIP returns `Optimal` / `Infeasible` (or `Satisfiable` on a decision
+  instance), its verdict and incumbent are emitted as the final answer.
+- Otherwise the SCIP-side `o …`, `s …`, and `v …` lines are emitted as
+  comments (`c scip-objective: o …`, `c scip-final: s …`,
+  `c scip-incumbent: v …`) and PRINTEMPS takes over.
+- If PRINTEMPS finishes without a feasible solution while SCIP had one, the
+  driver falls back to the SCIP incumbent and emits a final
+  `s SATISFIABLE` / `v …` block based on it.
+
+## Persisted state
+
+Under `--save-dir` (default `./.pb-scip-state`):
+
+- `scip_log.txt` — driver-level commentary on the SCIP run.
+- `scip_incumbent.sol` — SCIP's best solution merged with the
+  fixed-variable assignments, in the `xN VALUE` per-line format accepted by
+  `pb_competition_2025_solver -i`.
+- `scip_fixed_vars.txt` — only the variables SCIP proved to be fixed
+  (`lb == ub` at the root), in the same format. Kept as a separate file
+  for a future PRINTEMPS flag that consumes them directly; today PRINTEMPS
+  reads only the merged `-i` file.
+- `scip_bounds.json` — `{ status, primal_bound, dual_bound, elapsed_sec,
+  exit_code }`. `dual_bound` is captured but is not yet forwarded to
+  PRINTEMPS.
+
+The PRINTEMPS phase writes `printemps_log.txt` and `printemps_log.stderr.log`
+exactly as in `exact-printemps`.
+
+## Signal handling
+
+`SIGINT`, `SIGTERM`, and `SIGXCPU` set an interrupt flag and, while
+PRINTEMPS is running, are forwarded to it via `kill(pid, sig)` exactly as in
+`exact-printemps`. Mid-SCIP interruption is **not** wired up yet: russcip's
+`solve()` consumes the model so a side-thread cannot easily call
+`SCIPinterruptSolve`. If a signal arrives during the SCIP phase the
+interrupt flag is observed afterwards and PRINTEMPS is skipped; SCIP itself
+will continue until its own time limit expires. This is a known gap that a
+custom event handler could close in a future iteration.
+
+## Extensibility
+
+All inter-phase information lives in `pb_hybrid::handoff::SolverHandoff`:
+
+```rust
+pub struct SolverHandoff {
+    pub incumbent: Option<Vec<VarAssignment>>,
+    pub fixed_vars: Vec<VarAssignment>,
+    pub primal_bound: Option<f64>,
+    pub dual_bound: Option<f64>,
+}
+```
+
+Adding a PRINTEMPS → SCIP direction is a matter of having
+`pb_hybrid::printemps::run` return a `SolverHandoff` (e.g. by parsing its
+final `v …` line) and passing it into `scip::run` as a *warm start*. The
+SCIP stage can already consume such a payload to call `SCIPaddSol`. The
+same design accommodates an alternating loop: drive `scip::run` and
+`printemps::run` in turn, threading the handoff between them.
+
+Wiring the dual bound into PRINTEMPS only requires adding a
+`dual_bound: Option<f64>` field to `PrintempsConfig` and a matching CLI flag
+on the bundled solver.
+
+## Build
+
+The driver depends on `russcip`, which in turn needs a SCIP installation.
+Pick one of:
+
+- **System SCIP** (default): export `SCIPOPTDIR=/path/to/scip_install`
+  (containing `lib/libscip.so` and `include/scip/`). `cargo build` will
+  pick that up.
+- **Bundled SCIP**: build with `cargo build --release --features
+  bundled-scip`. This downloads a prebuilt SCIP zip via russcip's `bundled`
+  feature and needs network access at build time.
+- **From source**: `cargo build --release --features scip-from-source`.
+  Slowest but most portable.
+
+At runtime, if SCIP is installed somewhere non-standard, set
+`LD_LIBRARY_PATH` so the loader can find `libscip.so`.

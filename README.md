@@ -2,10 +2,11 @@
 
 [PRINTEMPS](https://snowberryfield.github.io/printemps/) solver for [Pseudo-Boolean Competition 2026](https://www.cril.univ-artois.fr/PB26/) submission.
 
-It contains two versions of solvers:
+It contains three versions of solvers:
 
 - PRINTEMPS itself
 - Hybrid solver that combines [Exact](https://gitlab.com/nonfiction-software/exact) and PRINTEMPS (see [README_hybrid.md](README_hybrid.md) for details)
+- Hybrid solver that combines [SCIP](https://www.scipopt.org/) and PRINTEMPS (see [README_scip_printemps.md](README_scip_printemps.md) for details)
 
 ## Solver information
 
@@ -19,6 +20,11 @@ DIR/bin/pb_competition_2025_solver -k -1 -t TIMEOUT -j NBCORE -r RANDOMSEED BENC
 Hybrid solver (Exact + PRINTEMPS):
 ```
 DIR/bin/exact-printemps --exact-path DIR/bin/Exact --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE BENCHNAME
+```
+
+Hybrid solver (SCIP + PRINTEMPS):
+```
+DIR/bin/scip-printemps --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE BENCHNAME
 ```
 
 ### Complete or not?
@@ -43,7 +49,7 @@ DIR/bin/exact-printemps --exact-path DIR/bin/Exact --printemps-path DIR/bin/pb_c
 
 | Path | Description |
 |------|-------------|
-| `src/`             | Rust driver source (`exact-printemps`). |
+| `src/`             | Rust driver source (`exact-printemps` and `scip-printemps`). |
 | `Exact/`           | Submodule: Exact (AGPL-3.0). |
 | `printemps/`       | Submodule: PRINTEMPS (MIT). |
 | `build.sh`         | Builds all three components and copies binaries to `bin/`. |
@@ -63,8 +69,13 @@ After a successful build:
 bin/
 ├── Exact                          # AGPLv3, sources under Exact/
 ├── pb_competition_2025_solver     # MIT, sources under printemps/
-└── exact-printemps                # MIT, sources under src/
+├── exact-printemps                # MIT, sources under src/
+└── scip-printemps                 # MIT, sources under src/
 ```
+
+The `scip-printemps` binary is only produced when SCIP is available at
+build time (see [README_scip_printemps.md](README_scip_printemps.md) for
+the supported build modes).
 
 By default `build.sh` links all three binaries statically (Exact and
 `pb_competition_2025_solver` via `-static`, `exact-printemps` via Rust's
