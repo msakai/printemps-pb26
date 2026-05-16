@@ -117,7 +117,10 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
         // tune SCIP-side parallelism can pass `--scip-arg name=value`.
         log_line(
             &mut log_file,
-            &format!("requested threads={} (forwarded only via --scip-arg)", threads),
+            &format!(
+                "requested threads={} (forwarded only via --scip-arg)",
+                threads
+            ),
         );
     }
     for (k, v) in cfg.extra_params {
@@ -247,12 +250,7 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
     // Persistence.
     let _ = handoff.write_printemps_initial_solution(cfg.incumbent_sol_path);
     let _ = handoff.write_fixed_vars(cfg.fixed_vars_path);
-    let _ = handoff.write_bounds_json(
-        cfg.bounds_path,
-        verdict_label(verdict),
-        elapsed_sec,
-        None,
-    );
+    let _ = handoff.write_bounds_json(cfg.bounds_path, verdict_label(verdict), elapsed_sec, None);
 
     let last_v_line = handoff.to_pb_v_line();
     let last_o_value = primal_bound.map(|v| format!("{}", v));
