@@ -4,4 +4,3 @@
 [submodule "Exact"]
 	path = Exact
 	url = https://github.com/msakai/exact.git
-	branch = claude/log-fixed-literals-7VUQU
