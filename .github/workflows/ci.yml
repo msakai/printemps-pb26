@@ -35,7 +35,7 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --release --bins --features scip-bundled -- -D warnings
 
-      - name: Build Exact + PRINTEMPS + driver
+      - name: Build
         run: CPU_ARCH=broadwell BUILD_SCIP_PRINTEMPS=ON ./build.sh
 
       - name: Package

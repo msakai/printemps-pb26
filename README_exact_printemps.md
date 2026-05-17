@@ -1,4 +1,4 @@
-# About Hybrid solver
+# About `exact-printemps`
 
 It runs [Exact](https://gitlab.com/nonfiction-software/exact) up to a configurable budget and,
 if Exact does not deliver a final answer (`s OPTIMUM FOUND`, `s UNSATISFIABLE`, or `s SATISFIABLE`

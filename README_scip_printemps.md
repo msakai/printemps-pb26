@@ -8,7 +8,7 @@ fixed (i.e. `lb == ub` at the root after presolve and root processing) over
 to PRINTEMPS' bundled `pb_competition_2025_solver` for a heuristic
 improvement phase.
 
-It is the SCIP-flavoured counterpart of [`exact-printemps`](README_hybrid.md).
+It is the SCIP-flavoured counterpart of [`exact-printemps`](README_exact_printemps.md).
 The orchestration is intentionally similar; the only differences are:
 
 - Phase 1 is an in-process SCIP solve, not a subprocess invocation of Exact.
