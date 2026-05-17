@@ -338,12 +338,21 @@ fn run() -> Result<(), String> {
     ) && scip_run.last_v_line.is_some();
 
     if needs_fallback {
+        if let Some(s) = p_run.last_s_line.as_deref() {
+            println!("c printemps-final: {}", s);
+        }
+        if let Some(v) = p_run.last_v_line.as_deref() {
+            println!("c printemps-final: {}", v);
+        }
         let v = scip_run.last_v_line.as_deref().unwrap();
         printemps::emit_fallback(
             "scip-printemps: PRINTEMPS did not improve; falling back to SCIP incumbent",
             v,
         )
         .map_err(|e| format!("failed to emit fallback: {e}"))?;
+    } else {
+        printemps::flush_final_lines(&p_run)
+            .map_err(|e| format!("failed to emit PRINTEMPS final lines: {e}"))?;
     }
 
     Ok(())

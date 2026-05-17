@@ -33,11 +33,7 @@ impl PrintempsVerdict {
 
 pub struct PrintempsRun {
     pub verdict: PrintempsVerdict,
-    /// Kept for future diagnostic / fallback decisions.
-    #[allow(dead_code)]
     pub last_s_line: Option<String>,
-    /// Kept for future diagnostic / fallback decisions.
-    #[allow(dead_code)]
     pub last_v_line: Option<String>,
     pub exit_code: Option<i32>,
 }
@@ -58,10 +54,11 @@ pub struct PrintempsConfig<'a> {
     pub child_slot: &'a ChildSlot,
 }
 
-/// Run pb_competition_2025_solver. Its stdout already conforms to PB
-/// competition output, so we pass it through verbatim while keeping the last
-/// `s` and `v` lines so the driver can fall back to a previously saved Exact
-/// incumbent if PRINTEMPS finishes with no feasible solution.
+/// Run pb_competition_2025_solver. Its stdout conforms to PB competition
+/// output and is passed through, with the exception of `s` and `v` lines which
+/// are buffered so the driver can decide between emitting PRINTEMPS' own
+/// final answer or falling back to a previously saved phase-1 incumbent.
+/// This guarantees stdout carries at most one `s`/`v` block.
 pub fn run(cfg: PrintempsConfig<'_>) -> std::io::Result<PrintempsRun> {
     let mut log_file = File::create(cfg.log_path)?;
 
@@ -147,8 +144,11 @@ pub fn run(cfg: PrintempsConfig<'_>) -> std::io::Result<PrintempsRun> {
 
             if body.starts_with("s ") {
                 last_s_line = Some(body.to_string());
-            } else if body.starts_with("v ") || body == "v" {
+                continue;
+            }
+            if body.starts_with("v ") || body == "v" {
                 last_v_line = Some(body.to_string());
+                continue;
             }
 
             let mut handle = stdout_lock.lock();
@@ -183,5 +183,19 @@ pub fn emit_fallback(s_line_hint: &str, v_line: &str) -> std::io::Result<()> {
     writeln!(h, "c {}", s_line_hint)?;
     writeln!(h, "s SATISFIABLE")?;
     writeln!(h, "{}", v_line)?;
+    h.flush()
+}
+
+/// Emit PRINTEMPS' buffered final `s` and `v` lines verbatim. Used when
+/// PRINTEMPS' own answer is the one we want to ship.
+pub fn flush_final_lines(run: &PrintempsRun) -> std::io::Result<()> {
+    let stdout = std::io::stdout();
+    let mut h = stdout.lock();
+    if let Some(ref s) = run.last_s_line {
+        writeln!(h, "{}", s)?;
+    }
+    if let Some(ref v) = run.last_v_line {
+        writeln!(h, "{}", v)?;
+    }
     h.flush()
 }
