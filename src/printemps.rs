@@ -50,6 +50,9 @@ pub struct PrintempsConfig<'a> {
     pub seed: Option<i64>,
     pub threads: Option<i32>,
     pub initial_solution: Option<&'a Path>,
+    /// Optional fixed-variable file (`-f`). Same line format as
+    /// `initial_solution`, but listing only variables that are pinned.
+    pub fixed_variable: Option<&'a Path>,
     pub extra_args: &'a [String],
     pub log_path: &'a Path,
     pub child_slot: &'a ChildSlot,
@@ -78,6 +81,11 @@ pub fn run(cfg: PrintempsConfig<'_>) -> std::io::Result<PrintempsRun> {
     if let Some(p) = cfg.initial_solution {
         if p.exists() {
             command.arg("-i").arg(p);
+        }
+    }
+    if let Some(p) = cfg.fixed_variable {
+        if p.exists() {
+            command.arg("-f").arg(p);
         }
     }
     command

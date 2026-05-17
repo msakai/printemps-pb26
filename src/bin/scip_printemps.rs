@@ -18,6 +18,7 @@ struct Args {
     scip_params: Vec<(String, String)>,
     extra_printemps: Vec<String>,
     verbose: bool,
+    use_fixed_literals: bool,
 }
 
 fn print_usage() {
@@ -33,6 +34,7 @@ fn print_usage() {
            -j, --threads N         Number of threads forwarded to PRINTEMPS (SCIP ignores).\n  \
            --scip-arg NAME=VALUE   Extra SCIP parameter (repeatable).\n  \
            --printemps-arg ARG     Extra argument to forward to PRINTEMPS (repeatable).\n  \
+           --use-fixed-literals    Forward variables that SCIP has proved fixed\n                          to PRINTEMPS via `-f` (default: disabled).\n  \
            --verbose               Enable driver-level logs on stderr.\n  \
            -h, --help              Show this help and exit.\n",
         default_scip = DEFAULT_SCIP_TIME_SEC
@@ -51,6 +53,7 @@ fn parse_args() -> Result<Args, String> {
     let mut scip_params: Vec<(String, String)> = Vec::new();
     let mut extra_printemps: Vec<String> = Vec::new();
     let mut verbose = false;
+    let mut use_fixed_literals = false;
 
     let mut i = 1;
     while i < argv.len() {
@@ -103,6 +106,10 @@ fn parse_args() -> Result<Args, String> {
                 verbose = true;
                 i += 1;
             }
+            "--use-fixed-literals" => {
+                use_fixed_literals = true;
+                i += 1;
+            }
             x if x.starts_with('-') => {
                 return Err(format!("unknown option: {x}"));
             }
@@ -138,6 +145,7 @@ fn parse_args() -> Result<Args, String> {
         scip_params,
         extra_printemps,
         verbose,
+        use_fixed_literals,
     })
 }
 
@@ -305,6 +313,11 @@ fn run() -> Result<(), String> {
         seed: args.seed,
         threads: args.threads,
         initial_solution: initial_sol,
+        fixed_variable: if args.use_fixed_literals {
+            Some(scip_fixed_vars_path.as_path())
+        } else {
+            None
+        },
         extra_args: &args.extra_printemps,
         log_path: &p_log_path,
         child_slot: &child_slot,

@@ -39,6 +39,8 @@ scip-printemps [OPTIONS] <instance.opb>
                           interpreted as bool / int / real / string based
                           on its lexical form.
   --printemps-arg ARG     Extra argument to forward to PRINTEMPS (repeatable).
+  --use-fixed-literals    Forward variables that SCIP has proved fixed
+                          to PRINTEMPS via `-f` (default: disabled).
   --verbose               Enable driver-level logs on stderr.
   -h, --help              Show this help and exit.
 ```
@@ -70,9 +72,9 @@ Under `--save-dir` (default `./.pb-scip-state`):
   fixed-variable assignments, in the `xN VALUE` per-line format accepted by
   `pb_competition_2025_solver -i`.
 - `scip_fixed_vars.txt` — only the variables SCIP proved to be fixed
-  (`lb == ub` at the root), in the same format. Kept as a separate file
-  for a future PRINTEMPS flag that consumes them directly; today PRINTEMPS
-  reads only the merged `-i` file.
+  (`lb == ub` at the root), in the same format. When
+  `--use-fixed-literals` is set, this file is also passed to PRINTEMPS
+  via its `-f` option; otherwise it is written for auditing only.
 - `scip_bounds.json` — `{ status, primal_bound, dual_bound, elapsed_sec,
   exit_code }`. `dual_bound` is captured but is not yet forwarded to
   PRINTEMPS.

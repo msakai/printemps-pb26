@@ -20,6 +20,9 @@ exact-printemps [OPTIONS] <instance.opb>
   -j, --threads N         Number of threads forwarded to both solvers.
   --exact-arg ARG         Extra argument to forward to Exact (repeatable).
   --printemps-arg ARG     Extra argument to forward to PRINTEMPS (repeatable).
+  --use-fixed-literals    Read ` c fixed <signed-int>` lines from Exact's
+                          output and forward them to PRINTEMPS via `-f`
+                          (default: disabled).
   --verbose               Enable driver-level logs on stderr.
   -h, --help              Show this help and exit.
 ```
@@ -49,6 +52,9 @@ The Exact phase writes the following under `--save-dir` (default
 - `exact_incumbent.sol` — the same solution, formatted for PRINTEMPS' `-i`
   (one `xN VALUE` line per variable).
 - `exact_bounds.json` — `{ status, primal_bound, elapsed_sec, exit_code }`.
+- `exact_fixed_literals.txt` — only when `--use-fixed-literals` is set
+  and Exact emitted any ` c fixed <signed-int>` lines; one
+  `xN 0|1` per fixed variable, in PRINTEMPS' `-f` format.
 
 The PRINTEMPS phase writes `printemps_log.txt` and `printemps_log.stderr.log`.
 

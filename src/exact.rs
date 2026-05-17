@@ -52,6 +52,9 @@ pub struct ExactConfig<'a> {
     pub bounds_path: &'a Path,
     pub incumbent_pb_path: &'a Path,
     pub incumbent_sol_path: &'a Path,
+    /// When `Some`, parse ` c fixed <signed-int>` lines from Exact's output
+    /// and write them as a PRINTEMPS fixed-variable file at this path.
+    pub fixed_literals_path: Option<&'a Path>,
     pub child_slot: &'a ChildSlot,
 }
 
@@ -67,7 +70,11 @@ pub fn run(cfg: ExactConfig<'_>) -> std::io::Result<ExactRun> {
         .arg(format!("--timeout={}", cfg.timeout_sec))
         .arg("--print-sol")
         .arg("--print-uniform=0")
-        .arg("--verbosity=1")
+        .arg("--verbosity=1");
+    if cfg.fixed_literals_path.is_some() {
+        command.arg("--log-fixed-lits=1");
+    }
+    command
         .args(cfg.extra_args)
         .arg(cfg.instance)
         .stdin(Stdio::null())
@@ -113,6 +120,8 @@ pub fn run(cfg: ExactConfig<'_>) -> std::io::Result<ExactRun> {
     let mut last_s_line: Option<String> = None;
     let mut last_v_line: Option<String> = None;
     let mut last_o_value: Option<String> = None;
+    let mut fixed_literals: Vec<i64> = Vec::new();
+    let collect_fixed = cfg.fixed_literals_path.is_some();
 
     {
         let mut reader = BufReader::new(stdout);
@@ -140,6 +149,12 @@ pub fn run(cfg: ExactConfig<'_>) -> std::io::Result<ExactRun> {
             }
             if let Some(rest) = body.strip_prefix("o ") {
                 last_o_value = Some(rest.trim().to_string());
+            }
+
+            if collect_fixed {
+                if let Some(lit) = parse_fixed_literal_line(body) {
+                    fixed_literals.push(lit);
+                }
             }
 
             let mut handle = stdout_lock.lock();
@@ -172,6 +187,12 @@ pub fn run(cfg: ExactConfig<'_>) -> std::io::Result<ExactRun> {
         elapsed_sec,
         exit_code,
     )?;
+
+    if let Some(p) = cfg.fixed_literals_path {
+        if !fixed_literals.is_empty() {
+            write_fixed_literals_file(p, &fixed_literals)?;
+        }
+    }
 
     Ok(ExactRun {
         verdict,
@@ -273,4 +294,53 @@ fn write_printemps_initial_solution(path: &Path, v_line: &str) -> std::io::Resul
 
 pub fn default_save_dir() -> PathBuf {
     PathBuf::from(".pb-state")
+}
+
+/// Parse a ` c fixed <signed-int>` log line emitted by the `msakai/exact`
+/// fork. Returns `Some(literal)` on a match, where the sign follows the
+/// DIMACS convention (positive = literal asserted true, negative = false).
+fn parse_fixed_literal_line(body: &str) -> Option<i64> {
+    let mut it = body.split_whitespace();
+    match it.next()? {
+        "c" => {}
+        _ => return None,
+    }
+    if it.next()? != "fixed" {
+        return None;
+    }
+    let tok = it.next()?;
+    if it.next().is_some() {
+        return None;
+    }
+    tok.parse::<i64>().ok().filter(|&v| v != 0)
+}
+
+/// Write `xN VALUE` lines (one per fixed literal) to `path`, in the format
+/// accepted by the PRINTEMPS standalone solver's `-f` option. Duplicate
+/// variable indices are kept as the first occurrence; conflicting fixings
+/// are skipped.
+fn write_fixed_literals_file(path: &Path, literals: &[i64]) -> std::io::Result<()> {
+    use std::collections::HashMap;
+    let mut seen: HashMap<i64, i32> = HashMap::new();
+    let mut order: Vec<i64> = Vec::new();
+    for &lit in literals {
+        let var = lit.abs();
+        let val: i32 = if lit > 0 { 1 } else { 0 };
+        if let Some(&prev) = seen.get(&var) {
+            if prev != val {
+                eprintln!(
+                    "exact-printemps: warning: conflicting fixings for x{} ({} vs {}); keeping first",
+                    var, prev, val
+                );
+            }
+            continue;
+        }
+        seen.insert(var, val);
+        order.push(var);
+    }
+    let mut f = File::create(path)?;
+    for var in order {
+        writeln!(f, "x{} {}", var, seen[&var])?;
+    }
+    Ok(())
 }
