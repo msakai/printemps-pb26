@@ -68,7 +68,7 @@ jobs:
         run: bin/pb_competition_2025_solver -k -1 -t 30 -r 12345 Exact/test/instances/opb/opt/air03.opb
 
       - name: Smoke Test (exact-printemps)
-        run: bin/exact-printemps -t 60 --exact-time 30 --seed 12345 Exact/test/instances/opb/opt/air03.opb
+        run: bin/exact-printemps -t 60 --exact-time 30 --seed 12345 --use-fixed-literals Exact/test/instances/opb/opt/air03.opb
 
       - name: Smoke Test (scip-printemps)
-        run: bin/scip-printemps -t 60 --scip-time 30 --seed 12345 Exact/test/instances/opb/opt/air03.opb
+        run: bin/scip-printemps -t 60 --scip-time 30 --seed 12345 --use-fixed-literals Exact/test/instances/opb/opt/air03.opb

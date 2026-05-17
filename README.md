@@ -19,12 +19,12 @@ DIR/bin/pb_competition_2025_solver -k -1 -t TIMEOUT -j NBCORE -r RANDOMSEED BENC
 
 Exact + PRINTEMPS:
 ```
-DIR/bin/exact-printemps --exact-path DIR/bin/Exact --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE BENCHNAME
+DIR/bin/exact-printemps --exact-path DIR/bin/Exact --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE --use-fixed-literals BENCHNAME
 ```
 
 SCIP + PRINTEMPS:
 ```
-DIR/bin/scip-printemps --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE BENCHNAME
+DIR/bin/scip-printemps --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE --use-fixed-literals BENCHNAME
 ```
 
 ### Complete or not?
