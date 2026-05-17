@@ -5,7 +5,7 @@
 It contains three versions of solvers:
 
 - PRINTEMPS itself
-- Hybrid solver that combines [Exact](https://gitlab.com/nonfiction-software/exact) and PRINTEMPS (see [README_hybrid.md](README_hybrid.md) for details)
+- Hybrid solver that combines [Exact](https://gitlab.com/nonfiction-software/exact) and PRINTEMPS (see [README_exact_printemps.md](README_exact_printemps.md) for details)
 - Hybrid solver that combines [SCIP](https://www.scipopt.org/) and PRINTEMPS (see [README_scip_printemps.md](README_scip_printemps.md) for details)
 
 ## Solver information
@@ -17,12 +17,12 @@ PRINTEMPS itself:
 DIR/bin/pb_competition_2025_solver -k -1 -t TIMEOUT -j NBCORE -r RANDOMSEED BENCHNAME
 ```
 
-Hybrid solver (Exact + PRINTEMPS):
+Exact + PRINTEMPS:
 ```
 DIR/bin/exact-printemps --exact-path DIR/bin/Exact --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE BENCHNAME
 ```
 
-Hybrid solver (SCIP + PRINTEMPS):
+SCIP + PRINTEMPS:
 ```
 DIR/bin/scip-printemps --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE BENCHNAME
 ```
@@ -60,8 +60,7 @@ DIR/bin/scip-printemps --printemps-path DIR/bin/pb_competition_2025_solver --sav
 
 ```sh
 git submodule update --init
-./build.sh                         # exact-printemps only
-BUILD_SCIP_PRINTEMPS=ON ./build.sh # also build scip-printemps
+BUILD_SCIP_PRINTEMPS=ON ./build.sh
 ```
 
 After a successful build:
