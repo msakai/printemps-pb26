@@ -18,6 +18,7 @@ struct Args {
     scip_params: Vec<(String, String)>,
     extra_printemps: Vec<String>,
     verbose: bool,
+    use_fixed_literals: bool,
 }
 
 fn print_usage() {
@@ -51,6 +52,7 @@ fn parse_args() -> Result<Args, String> {
     let mut scip_params: Vec<(String, String)> = Vec::new();
     let mut extra_printemps: Vec<String> = Vec::new();
     let mut verbose = false;
+    let mut use_fixed_literals = false;
 
     let mut i = 1;
     while i < argv.len() {
@@ -103,6 +105,10 @@ fn parse_args() -> Result<Args, String> {
                 verbose = true;
                 i += 1;
             }
+            "--use-fixed-literals" => {
+                use_fixed_literals = true;
+                i += 1;
+            }
             x if x.starts_with('-') => {
                 return Err(format!("unknown option: {x}"));
             }
@@ -138,6 +144,7 @@ fn parse_args() -> Result<Args, String> {
         scip_params,
         extra_printemps,
         verbose,
+        use_fixed_literals,
     })
 }
 
@@ -297,12 +304,6 @@ fn run() -> Result<(), String> {
         None
     };
 
-    let fixed_vars = if scip_fixed_vars_path.exists() {
-        Some(scip_fixed_vars_path.as_path())
-    } else {
-        None
-    };
-
     let p_run = printemps::run(printemps::PrintempsConfig {
         solver_path: &args.printemps_path,
         instance: &args.instance,
@@ -311,7 +312,11 @@ fn run() -> Result<(), String> {
         seed: args.seed,
         threads: args.threads,
         initial_solution: initial_sol,
-        fixed_variable: fixed_vars,
+        fixed_variable: if args.use_fixed_literals {
+            Some(scip_fixed_vars_path.as_path())
+        } else {
+            None
+        },
         extra_args: &args.extra_printemps,
         log_path: &p_log_path,
         child_slot: &child_slot,
