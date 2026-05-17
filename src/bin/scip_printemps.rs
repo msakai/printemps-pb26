@@ -34,6 +34,7 @@ fn print_usage() {
            -j, --threads N         Number of threads forwarded to PRINTEMPS (SCIP ignores).\n  \
            --scip-arg NAME=VALUE   Extra SCIP parameter (repeatable).\n  \
            --printemps-arg ARG     Extra argument to forward to PRINTEMPS (repeatable).\n  \
+           --use-fixed-literals    Forward variables that SCIP has proved fixed\n                          to PRINTEMPS via `-f` (default: disabled).\n  \
            --verbose               Enable driver-level logs on stderr.\n  \
            -h, --help              Show this help and exit.\n",
         default_scip = DEFAULT_SCIP_TIME_SEC
