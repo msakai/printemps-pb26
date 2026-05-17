@@ -16,20 +16,25 @@ path = "src/bin/exact_printemps.rs"
 [[bin]]
 name = "scip-printemps"
 path = "src/bin/scip_printemps.rs"
+required-features = ["scip"]
 
 [dependencies]
 nix = { version = "0.29", features = ["signal", "process"] }
 signal-hook = "0.3"
-russcip = { version = "0.5", default-features = false }
+russcip = { version = "0.5", default-features = false, optional = true }
 
 [features]
 default = []
-# Build SCIP from a prebuilt bundle (downloaded by russcip's `bundled` feature).
-# Requires network access at build time. Without this feature, SCIP must be
-# available via SCIPOPTDIR or system include paths.
-bundled-scip = ["russcip/bundled"]
-# Compile SCIP from source. Slow but most portable.
-scip-from-source = ["russcip/from-source"]
+# Enables the scip-printemps binary and the `pb_hybrid::scip` module. A SCIP
+# installation must be reachable somehow: via SCIPOPTDIR, a system install,
+# or by combining this feature with `scip-bundled` / `scip-from-source`.
+scip = ["dep:russcip"]
+# Pull a prebuilt SCIP shared library at build time (network access required).
+scip-bundled = ["scip", "russcip/bundled"]
+# Build SCIP from source. Produces a static libscip.a so the resulting
+# scip-printemps binary only retains dynamic links to common system libs
+# (glibc, libstdc++, etc.). Recommended for distributable artifacts.
+scip-from-source = ["scip", "russcip/from-source"]
 
 [profile.release]
 lto = "thin"

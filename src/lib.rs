@@ -9,5 +9,6 @@ pub mod exact;
 pub mod handoff;
 pub mod opb;
 pub mod printemps;
+#[cfg(feature = "scip")]
 pub mod scip;
 pub mod signals;

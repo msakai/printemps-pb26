@@ -117,17 +117,35 @@ on the bundled solver.
 
 ## Build
 
-The driver depends on `russcip`, which in turn needs a SCIP installation.
-Pick one of:
+`russcip` is an **optional** dependency, gated on the `scip` Cargo feature.
+Building only `exact-printemps` therefore does not pull in `russcip` /
+`scip-sys` at all, and works on hosts without SCIP installed:
 
-- **System SCIP** (default): export `SCIPOPTDIR=/path/to/scip_install`
-  (containing `lib/libscip.so` and `include/scip/`). `cargo build` will
-  pick that up.
-- **Bundled SCIP**: build with `cargo build --release --features
-  bundled-scip`. This downloads a prebuilt SCIP zip via russcip's `bundled`
-  feature and needs network access at build time.
-- **From source**: `cargo build --release --features scip-from-source`.
-  Slowest but most portable.
+```sh
+cargo build --release --bin exact-printemps
+```
 
-At runtime, if SCIP is installed somewhere non-standard, set
-`LD_LIBRARY_PATH` so the loader can find `libscip.so`.
+To build `scip-printemps` you must pick how SCIP is provided:
+
+- **System SCIP** (`--features scip`): export `SCIPOPTDIR=/path/to/scip_install`
+  (containing `lib/libscip.so` and `include/scip/`) and run
+  `cargo build --release --bin scip-printemps --features scip`. The binary
+  retains a runtime dependency on `libscip.so`.
+- **Bundled SCIP** (`--features scip-bundled`): downloads a prebuilt SCIP
+  shared library at build time. Convenient but the resulting binary still
+  needs `libscip.so` at runtime (no static option available in this mode).
+  Requires network access during the build.
+- **From source** (`--features scip-from-source`, recommended for
+  distributable binaries): downloads the scipoptsuite source and compiles
+  SCIP with `-DSHARED=OFF`, producing a static `libscip.a`. The resulting
+  `scip-printemps` only retains dynamic links to common system libraries
+  (glibc, libstdc++, libgomp). Slower to build the first time; the
+  scip-sys build artifacts are cached by `Swatinem/rust-cache` in CI.
+
+`./build.sh` defaults to building only `exact-printemps` (statically linked).
+Set `BUILD_SCIP_PRINTEMPS=ON` to additionally build `scip-printemps` with the
+`scip-from-source` feature; override the feature with
+`SCIP_PRINTEMPS_FEATURE=scip-bundled` etc. if a different mode is desired.
+
+At runtime, if SCIP is installed as a shared library somewhere non-standard,
+set `LD_LIBRARY_PATH` so the loader can find `libscip.so`.

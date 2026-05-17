@@ -18,34 +18,28 @@ mkdir -p "$ROOT/Exact/build"
 echo "[pb] building PRINTEMPS pb_competition_2025_solver"
 ( cd "$ROOT/printemps" && make -f makefile/Makefile.extra STATIC="$STATIC" CPU_ARCH="$CPU_ARCH" -j"$JOBS" )
 
-echo "[pb] building driver"
-# scip-printemps depends on `russcip`, which links against SCIP. By default we
-# build only the exact-printemps binary so the bundle stays buildable on hosts
-# without SCIP. Set BUILD_SCIP_PRINTEMPS=ON (and provide SCIP via SCIPOPTDIR,
-# a system install, or the `bundled-scip` cargo feature) to also build
-# scip-printemps.
-BUILD_SCIP_PRINTEMPS="${BUILD_SCIP_PRINTEMPS:-OFF}"
-CARGO_FEATURES="${CARGO_FEATURES:-}"
-
-cargo_build() {
-  local bins=("--bin" "exact-printemps")
-  if [ "$BUILD_SCIP_PRINTEMPS" = "ON" ]; then
-    bins+=("--bin" "scip-printemps")
-  fi
-  local feat_args=()
-  if [ -n "$CARGO_FEATURES" ]; then
-    feat_args=("--features" "$CARGO_FEATURES")
-  fi
-  ( cd "$ROOT" && cargo build --release "${bins[@]}" "${feat_args[@]}" )
-}
-
-if [ "$STATIC" = "ON" ] && [ "$BUILD_SCIP_PRINTEMPS" != "ON" ]; then
-  ( cd "$ROOT" && RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static" cargo build --release --bin exact-printemps )
+echo "[pb] building exact-printemps"
+# exact-printemps is built first, with russcip absent from the dependency
+# graph (no `scip` feature), so SCIP is not required to be installed.
+if [ "$STATIC" = "ON" ]; then
+  ( cd "$ROOT" && RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static" \
+      cargo build --release --bin exact-printemps )
 else
-  # SCIP pulls in libgfortran/libgmp/etc., so +crt-static cannot produce a
-  # fully static scip-printemps without a custom toolchain. Fall back to the
-  # default linkage when the SCIP binary is part of the build set.
-  cargo_build
+  ( cd "$ROOT" && cargo build --release --bin exact-printemps )
+fi
+
+# scip-printemps is optional. Set BUILD_SCIP_PRINTEMPS=ON to also build it.
+# SCIP itself is linked statically (via the `scip-from-source` feature, which
+# compiles SCIP with -DSHARED=OFF), but common system libraries (glibc,
+# libstdc++, libgcc_s, libgomp) remain dynamically linked because rust's
+# `+crt-static` cannot cover SCIP's C++ runtime.
+BUILD_SCIP_PRINTEMPS="${BUILD_SCIP_PRINTEMPS:-OFF}"
+SCIP_PRINTEMPS_FEATURE="${SCIP_PRINTEMPS_FEATURE:-scip-from-source}"
+
+if [ "$BUILD_SCIP_PRINTEMPS" = "ON" ]; then
+  echo "[pb] building scip-printemps (--features $SCIP_PRINTEMPS_FEATURE)"
+  ( cd "$ROOT" && cargo build --release --bin scip-printemps \
+      --features "$SCIP_PRINTEMPS_FEATURE" )
 fi
 
 mkdir -p "$ROOT/bin"
