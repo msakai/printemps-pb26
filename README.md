@@ -60,7 +60,8 @@ DIR/bin/scip-printemps --printemps-path DIR/bin/pb_competition_2025_solver --sav
 
 ```sh
 git submodule update --init
-./build.sh
+./build.sh                         # exact-printemps only
+BUILD_SCIP_PRINTEMPS=ON ./build.sh # also build scip-printemps
 ```
 
 After a successful build:
@@ -70,12 +71,16 @@ bin/
 ├── Exact                          # AGPLv3, sources under Exact/
 ├── pb_competition_2025_solver     # MIT, sources under printemps/
 ├── exact-printemps                # MIT, sources under src/
-└── scip-printemps                 # MIT, sources under src/
+└── scip-printemps                 # MIT (links SCIP & SoPlex, both Apache-2.0)
 ```
 
-The `scip-printemps` binary is only produced when SCIP is available at
-build time (see [README_scip_printemps.md](README_scip_printemps.md) for
-the supported build modes).
+The `scip-printemps` binary is opt-in via `BUILD_SCIP_PRINTEMPS=ON`. When
+`STATIC=ON` (default), `exact-printemps` is fully statically linked with
+`+crt-static`, while `scip-printemps` links SCIP/SoPlex statically (via the
+`scip-from-source` Cargo feature, which builds SCIP from source with
+`-DSHARED=OFF`) but keeps glibc/libstdc++/libgomp dynamic. See
+[README_scip_printemps.md](README_scip_printemps.md) for the supported
+SCIP build modes (`scip`, `scip-bundled`, `scip-from-source`).
 
 By default `build.sh` links all three binaries statically (Exact and
 `pb_competition_2025_solver` via `-static`, `exact-printemps` via Rust's

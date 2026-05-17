@@ -142,10 +142,22 @@ To build `scip-printemps` you must pick how SCIP is provided:
   (glibc, libstdc++, libgomp). Slower to build the first time; the
   scip-sys build artifacts are cached by `Swatinem/rust-cache` in CI.
 
-`./build.sh` defaults to building only `exact-printemps` (statically linked).
-Set `BUILD_SCIP_PRINTEMPS=ON` to additionally build `scip-printemps` with the
-`scip-from-source` feature; override the feature with
-`SCIP_PRINTEMPS_FEATURE=scip-bundled` etc. if a different mode is desired.
+### Recommended path: `./build.sh`
+
+`BUILD_SCIP_PRINTEMPS=ON ./build.sh` builds both binaries in a single shot:
+
+- `exact-printemps` is built first **without** the `scip` feature, so
+  `russcip` / `scip-sys` never enter the dependency graph. With the default
+  `STATIC=ON` this binary is fully statically linked (`+crt-static`).
+- `scip-printemps` is then built with `--features $SCIP_PRINTEMPS_FEATURE`
+  (default `scip-from-source`), which compiles SCIP from source with
+  `-DSHARED=OFF`. The resulting binary links SCIP/SoPlex statically and
+  keeps glibc/libstdc++/libgomp dynamic. `build.sh` asserts via `ldd` that
+  neither `libscip` nor `libsoplex` is a dynamic dependency.
+
+Override the SCIP mode by exporting `SCIP_PRINTEMPS_FEATURE=scip-bundled`
+or `SCIP_PRINTEMPS_FEATURE=scip` (the latter requires a system SCIP at
+`SCIPOPTDIR` and is the offline-friendly option).
 
 At runtime, if SCIP is installed as a shared library somewhere non-standard,
 set `LD_LIBRARY_PATH` so the loader can find `libscip.so`.

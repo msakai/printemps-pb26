@@ -36,13 +36,13 @@ jobs:
         run: cargo clippy --release --bins --features scip-bundled -- -D warnings
 
       - name: Build Exact + PRINTEMPS + driver
-        run: CPU_ARCH=broadwell ./build.sh
+        run: CPU_ARCH=broadwell BUILD_SCIP_PRINTEMPS=ON ./build.sh
 
       - name: Package
         run: |
           STAGE="printemps_pb26"
           mkdir -p "$STAGE/bin" "$STAGE/Exact" "$STAGE/printemps"
-          cp bin/Exact bin/pb_competition_2025_solver bin/exact-printemps "$STAGE/bin/"
+          cp bin/Exact bin/pb_competition_2025_solver bin/exact-printemps bin/scip-printemps "$STAGE/bin/"
           git archive --format=tar HEAD | tar -x -C "$STAGE"
           git -C Exact archive --format=tar HEAD | tar -x -C "$STAGE/Exact"
           git -C printemps archive --format=tar HEAD | tar -x -C "$STAGE/printemps"
@@ -51,6 +51,9 @@ jobs:
             echo "Driver commit:    ${GITHUB_SHA:-}"
             echo "Exact commit:     $(git -C Exact rev-parse HEAD)"
             echo "PRINTEMPS commit: $(git -C printemps rev-parse HEAD)"
+            echo ""
+            echo "scip-printemps links SCIP and SoPlex (Apache-2.0) statically;"
+            echo "see https://www.scipopt.org/ for the upstream SCIP Optimization Suite."
           } > "$STAGE/BUILD_INFO.txt"
           tar -czf "$STAGE.tar.gz" "$STAGE"
 
@@ -67,46 +70,5 @@ jobs:
       - name: Smoke Test (exact-printemps)
         run: bin/exact-printemps -t 60 --exact-time 30 --seed 12345 Exact/test/instances/opb/opt/air03.opb
 
-  build-scip-printemps:
-    name: build scip-printemps (from-source SCIP)
-    runs-on: ubuntu-latest
-    needs: build
-    timeout-minutes: 60
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: false
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake
-
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo (incl. scip-sys OUT_DIR)
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: scip-from-source
-
-      - name: Build scip-printemps with static SCIP
-        run: cargo build --release --bin scip-printemps --features scip-from-source
-
-      - name: Inspect linkage
-        run: |
-          file target/release/scip-printemps
-          ldd target/release/scip-printemps || true
-          if ldd target/release/scip-printemps | grep -E 'libscip|libsoplex'; then
-            echo "ERROR: SCIP/SoPlex should be statically linked but appear in ldd output"
-            exit 1
-          fi
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: scip-printemps
-          path: target/release/scip-printemps
-          if-no-files-found: error
+      - name: Smoke Test (scip-printemps)
+        run: bin/scip-printemps -t 60 --scip-time 30 --seed 12345 Exact/test/instances/opb/opt/air03.opb
