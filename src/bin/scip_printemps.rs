@@ -297,6 +297,12 @@ fn run() -> Result<(), String> {
         None
     };
 
+    let fixed_vars = if scip_fixed_vars_path.exists() {
+        Some(scip_fixed_vars_path.as_path())
+    } else {
+        None
+    };
+
     let p_run = printemps::run(printemps::PrintempsConfig {
         solver_path: &args.printemps_path,
         instance: &args.instance,
@@ -305,6 +311,7 @@ fn run() -> Result<(), String> {
         seed: args.seed,
         threads: args.threads,
         initial_solution: initial_sol,
+        fixed_variable: fixed_vars,
         extra_args: &args.extra_printemps,
         log_path: &p_log_path,
         child_slot: &child_slot,
