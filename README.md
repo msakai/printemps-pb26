@@ -2,10 +2,11 @@
 
 [PRINTEMPS](https://snowberryfield.github.io/printemps/) solver for [Pseudo-Boolean Competition 2026](https://www.cril.univ-artois.fr/PB26/) submission.
 
-It contains two versions of solvers:
+It contains three versions of solvers:
 
 - PRINTEMPS itself
-- Hybrid solver that combines [Exact](https://gitlab.com/nonfiction-software/exact) and PRINTEMPS (see [README_hybrid.md](README_hybrid.md) for details)
+- Hybrid solver that combines [Exact](https://gitlab.com/nonfiction-software/exact) and PRINTEMPS (see [README_exact_printemps.md](README_exact_printemps.md) for details)
+- Hybrid solver that combines [SCIP](https://www.scipopt.org/) and PRINTEMPS (see [README_scip_printemps.md](README_scip_printemps.md) for details)
 
 ## Solver information
 
@@ -16,9 +17,14 @@ PRINTEMPS itself:
 DIR/bin/pb_competition_2025_solver -k -1 -t TIMEOUT -j NBCORE -r RANDOMSEED BENCHNAME
 ```
 
-Hybrid solver (Exact + PRINTEMPS):
+Exact + PRINTEMPS:
 ```
 DIR/bin/exact-printemps --exact-path DIR/bin/Exact --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE BENCHNAME
+```
+
+SCIP + PRINTEMPS:
+```
+DIR/bin/scip-printemps --printemps-path DIR/bin/pb_competition_2025_solver --save-dir TMPDIR -t TIMEOUT --seed RANDOMSEED -j NBCORE BENCHNAME
 ```
 
 ### Complete or not?
@@ -43,7 +49,7 @@ DIR/bin/exact-printemps --exact-path DIR/bin/Exact --printemps-path DIR/bin/pb_c
 
 | Path | Description |
 |------|-------------|
-| `src/`             | Rust driver source (`exact-printemps`). |
+| `src/`             | Rust driver source (`exact-printemps` and `scip-printemps`). |
 | `Exact/`           | Submodule: Exact (AGPL-3.0). |
 | `printemps/`       | Submodule: PRINTEMPS (MIT). |
 | `build.sh`         | Builds all three components and copies binaries to `bin/`. |
@@ -54,7 +60,7 @@ DIR/bin/exact-printemps --exact-path DIR/bin/Exact --printemps-path DIR/bin/pb_c
 
 ```sh
 git submodule update --init
-./build.sh
+BUILD_SCIP_PRINTEMPS=ON ./build.sh
 ```
 
 After a successful build:
@@ -63,8 +69,17 @@ After a successful build:
 bin/
 ├── Exact                          # AGPLv3, sources under Exact/
 ├── pb_competition_2025_solver     # MIT, sources under printemps/
-└── exact-printemps                # MIT, sources under src/
+├── exact-printemps                # MIT, sources under src/
+└── scip-printemps                 # MIT (links SCIP & SoPlex, both Apache-2.0)
 ```
+
+The `scip-printemps` binary is opt-in via `BUILD_SCIP_PRINTEMPS=ON`. When
+`STATIC=ON` (default), `exact-printemps` is fully statically linked with
+`+crt-static`, while `scip-printemps` links SCIP/SoPlex statically (via the
+`scip-from-source` Cargo feature, which builds SCIP from source with
+`-DSHARED=OFF`) but keeps glibc/libstdc++/libgomp dynamic. See
+[README_scip_printemps.md](README_scip_printemps.md) for the supported
+SCIP build modes (`scip`, `scip-bundled`, `scip-from-source`).
 
 By default `build.sh` links all three binaries statically (Exact and
 `pb_competition_2025_solver` via `-static`, `exact-printemps` via Rust's

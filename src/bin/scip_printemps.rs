@@ -1,66 +1,56 @@
-mod exact;
-mod opb;
-mod printemps;
-mod signals;
-
+use pb_hybrid::{opb, printemps, scip, signals};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-const DEFAULT_EXACT_TIME_SEC: f64 = 300.0;
+const DEFAULT_SCIP_TIME_SEC: f64 = 300.0;
 
 struct Args {
     instance: PathBuf,
-    exact_time: f64,
+    scip_time: f64,
     overall_time: Option<f64>,
-    exact_path: PathBuf,
     printemps_path: PathBuf,
     save_dir: PathBuf,
     seed: Option<i64>,
     threads: Option<i32>,
-    extra_exact: Vec<String>,
+    scip_params: Vec<(String, String)>,
     extra_printemps: Vec<String>,
     verbose: bool,
-    use_fixed_literals: bool,
 }
 
 fn print_usage() {
-    eprintln!("\nexact-printemps: PRINTEMPS + Exact hybrid driver for PB Competitions\n");
+    eprintln!("\nscip-printemps: PRINTEMPS + SCIP hybrid driver for PB Competitions\n");
     eprintln!(
-        "Usage: exact-printemps [OPTIONS] <instance.opb>\n\n\
+        "Usage: scip-printemps [OPTIONS] <instance.opb>\n\n\
          Options:\n  \
-           --exact-time SEC        Time budget for the Exact phase (default: {default_exact}s).\n  \
+           --scip-time SEC         Time budget for the SCIP phase (default: {default_scip}s).\n  \
            -t, --time-max SEC      Overall time budget; PRINTEMPS uses what's left.\n  \
-           --exact-path PATH       Path to the Exact binary (default: ./bin/Exact).\n  \
            --printemps-path PATH   Path to pb_competition_2025_solver\n                          (default: ./bin/pb_competition_2025_solver).\n  \
-           --save-dir DIR          Directory for state files (default: ./.pb-state).\n  \
+           --save-dir DIR          Directory for state files (default: ./.pb-scip-state).\n  \
            -r, --seed N            Random seed forwarded to both solvers.\n  \
-           -j, --threads N         Number of threads forwarded to both solvers.\n  \
-           --exact-arg ARG         Extra argument to forward to Exact (repeatable).\n  \
+           -j, --threads N         Number of threads forwarded to PRINTEMPS (SCIP ignores).\n  \
+           --scip-arg NAME=VALUE   Extra SCIP parameter (repeatable).\n  \
            --printemps-arg ARG     Extra argument to forward to PRINTEMPS (repeatable).\n  \
-           --use-fixed-literals    Read ` c fixed <signed-int>` lines from Exact's\n                          output and forward them to PRINTEMPS via `-f`\n                          (default: disabled).\n  \
            --verbose               Enable driver-level logs on stderr.\n  \
            -h, --help              Show this help and exit.\n",
-        default_exact = DEFAULT_EXACT_TIME_SEC
+        default_scip = DEFAULT_SCIP_TIME_SEC
     );
 }
 
 fn parse_args() -> Result<Args, String> {
     let argv: Vec<String> = env::args().collect();
     let mut instance: Option<PathBuf> = None;
-    let mut exact_time: f64 = DEFAULT_EXACT_TIME_SEC;
+    let mut scip_time: f64 = DEFAULT_SCIP_TIME_SEC;
     let mut overall_time: Option<f64> = None;
-    let mut exact_path = default_exact_path();
     let mut printemps_path = default_printemps_path();
-    let mut save_dir = exact::default_save_dir();
+    let mut save_dir = default_save_dir();
     let mut seed: Option<i64> = None;
     let mut threads: Option<i32> = None;
-    let mut extra_exact: Vec<String> = Vec::new();
+    let mut scip_params: Vec<(String, String)> = Vec::new();
     let mut extra_printemps: Vec<String> = Vec::new();
     let mut verbose = false;
-    let mut use_fixed_literals = false;
 
     let mut i = 1;
     while i < argv.len() {
@@ -70,19 +60,16 @@ fn parse_args() -> Result<Args, String> {
                 print_usage();
                 std::process::exit(0);
             }
-            "--exact-time" => {
-                exact_time = next_arg(&argv, &mut i, "--exact-time")?
+            "--scip-time" => {
+                scip_time = next_arg(&argv, &mut i, "--scip-time")?
                     .parse()
-                    .map_err(|e| format!("invalid --exact-time: {e}"))?;
+                    .map_err(|e| format!("invalid --scip-time: {e}"))?;
             }
             "-t" | "--time-max" => {
                 let v: f64 = next_arg(&argv, &mut i, "--time-max")?
                     .parse()
                     .map_err(|e| format!("invalid --time-max: {e}"))?;
                 overall_time = Some(v);
-            }
-            "--exact-path" => {
-                exact_path = PathBuf::from(next_arg(&argv, &mut i, "--exact-path")?);
             }
             "--printemps-path" => {
                 printemps_path = PathBuf::from(next_arg(&argv, &mut i, "--printemps-path")?);
@@ -102,18 +89,18 @@ fn parse_args() -> Result<Args, String> {
                     .map_err(|e| format!("invalid --threads: {e}"))?;
                 threads = Some(v);
             }
-            "--exact-arg" => {
-                extra_exact.push(next_arg(&argv, &mut i, "--exact-arg")?);
+            "--scip-arg" => {
+                let s = next_arg(&argv, &mut i, "--scip-arg")?;
+                let (k, v) = s
+                    .split_once('=')
+                    .ok_or_else(|| format!("--scip-arg expects NAME=VALUE, got {s}"))?;
+                scip_params.push((k.to_string(), v.to_string()));
             }
             "--printemps-arg" => {
                 extra_printemps.push(next_arg(&argv, &mut i, "--printemps-arg")?);
             }
             "--verbose" => {
                 verbose = true;
-                i += 1;
-            }
-            "--use-fixed-literals" => {
-                use_fixed_literals = true;
                 i += 1;
             }
             x if x.starts_with('-') => {
@@ -131,8 +118,8 @@ fn parse_args() -> Result<Args, String> {
 
     let instance = instance.ok_or_else(|| "missing <instance.opb>".to_string())?;
 
-    if exact_time < 0.0 {
-        return Err("--exact-time must be non-negative".into());
+    if scip_time < 0.0 {
+        return Err("--scip-time must be non-negative".into());
     }
     if let Some(t) = overall_time {
         if t < 0.0 {
@@ -142,17 +129,15 @@ fn parse_args() -> Result<Args, String> {
 
     Ok(Args {
         instance,
-        exact_time,
+        scip_time,
         overall_time,
-        exact_path,
         printemps_path,
         save_dir,
         seed,
         threads,
-        extra_exact,
+        scip_params,
         extra_printemps,
         verbose,
-        use_fixed_literals,
     })
 }
 
@@ -165,13 +150,6 @@ fn next_arg(argv: &[String], i: &mut usize, name: &str) -> Result<String, String
     Ok(v)
 }
 
-fn default_exact_path() -> PathBuf {
-    if let Ok(p) = env::var("PB_EXACT") {
-        return PathBuf::from(p);
-    }
-    PathBuf::from("./bin/Exact")
-}
-
 fn default_printemps_path() -> PathBuf {
     if let Ok(p) = env::var("PB_PRINTEMPS") {
         return PathBuf::from(p);
@@ -179,9 +157,13 @@ fn default_printemps_path() -> PathBuf {
     PathBuf::from("./bin/pb_competition_2025_solver")
 }
 
+fn default_save_dir() -> PathBuf {
+    PathBuf::from(".pb-scip-state")
+}
+
 fn driver_log(verbose: bool, msg: &str) {
     if verbose {
-        eprintln!("[exact-printemps] {msg}");
+        eprintln!("[scip-printemps] {msg}");
     }
 }
 
@@ -193,12 +175,6 @@ fn run() -> Result<(), String> {
         return Err(format!(
             "instance file not found: {}",
             args.instance.display()
-        ));
-    }
-    if !args.exact_path.exists() {
-        return Err(format!(
-            "Exact binary not found: {}",
-            args.exact_path.display()
         ));
     }
     if !args.printemps_path.exists() {
@@ -224,75 +200,71 @@ fn run() -> Result<(), String> {
     let (child_slot, interrupt_flag) = signals::install_forwarder();
 
     // -----------------------------------------------------------------
-    // Phase 1: Exact
+    // Phase 1: SCIP
     // -----------------------------------------------------------------
-    let exact_budget = match args.overall_time {
-        Some(t) => args.exact_time.min(t),
-        None => args.exact_time,
+    let scip_budget = match args.overall_time {
+        Some(t) => args.scip_time.min(t),
+        None => args.scip_time,
     };
 
-    let log_path = args.save_dir.join("exact_log.txt");
-    let bounds_path = args.save_dir.join("exact_bounds.json");
-    let incumbent_pb_path = args.save_dir.join("exact_incumbent_pb.txt");
-    let incumbent_sol_path = args.save_dir.join("exact_incumbent.sol");
-    let fixed_literals_path = args.save_dir.join("exact_fixed_literals.txt");
+    let scip_log_path = args.save_dir.join("scip_log.txt");
+    let scip_bounds_path = args.save_dir.join("scip_bounds.json");
+    let scip_incumbent_sol_path = args.save_dir.join("scip_incumbent.sol");
+    let scip_fixed_vars_path = args.save_dir.join("scip_fixed_vars.txt");
 
     println!(
-        "c exact-printemps: phase 1 (Exact, budget={:.3}s)",
-        exact_budget
+        "c scip-printemps: phase 1 (SCIP, budget={:.3}s)",
+        scip_budget
     );
-    let exact_run = exact::run(exact::ExactConfig {
-        exact_path: &args.exact_path,
+    let scip_run = scip::run(scip::ScipConfig {
         instance: &args.instance,
-        timeout_sec: exact_budget,
-        extra_args: &args.extra_exact,
-        log_path: &log_path,
-        bounds_path: &bounds_path,
-        incumbent_pb_path: &incumbent_pb_path,
-        incumbent_sol_path: &incumbent_sol_path,
-        fixed_literals_path: if args.use_fixed_literals {
-            Some(fixed_literals_path.as_path())
-        } else {
-            None
-        },
-        child_slot: &child_slot,
+        timeout_sec: scip_budget,
+        seed: args.seed,
+        threads: args.threads,
+        extra_params: &args.scip_params,
+        log_path: &scip_log_path,
+        bounds_path: &scip_bounds_path,
+        incumbent_sol_path: &scip_incumbent_sol_path,
+        fixed_vars_path: &scip_fixed_vars_path,
+        interrupt_flag: &interrupt_flag,
     })
-    .map_err(|e| format!("Exact phase failed: {e}"))?;
+    .map_err(|e| format!("SCIP phase failed: {e}"))?;
     driver_log(
         args.verbose,
         &format!(
-            "Exact verdict={:?} elapsed={:.3}s exit={:?}",
-            exact_run.verdict, exact_run.elapsed_sec, exact_run.exit_code
+            "SCIP verdict={:?} elapsed={:.3}s primal={:?} dual={:?} n_fixed={}",
+            scip_run.verdict,
+            scip_run.elapsed_sec,
+            scip_run.handoff.primal_bound,
+            scip_run.handoff.dual_bound,
+            scip_run.handoff.fixed_vars.len(),
         ),
     );
 
-    let is_final = match exact_run.verdict {
-        exact::Verdict::OptimumFound => true,
-        exact::Verdict::Unsatisfiable => true,
-        exact::Verdict::Satisfiable => !opb_info.has_objective,
-        exact::Verdict::Unknown => false,
+    let is_final = match scip_run.verdict {
+        scip::ScipVerdict::OptimumFound => true,
+        scip::ScipVerdict::Unsatisfiable => true,
+        scip::ScipVerdict::Satisfiable => !opb_info.has_objective,
+        scip::ScipVerdict::Unknown => false,
     };
 
     if is_final {
-        exact::flush_buffered_lines(&exact_run, false)
-            .map_err(|e| format!("failed to flush Exact final lines: {e}"))?;
+        scip::flush_buffered_lines(&scip_run, false)
+            .map_err(|e| format!("failed to flush SCIP final lines: {e}"))?;
         return Ok(());
     }
 
-    // If the driver itself was interrupted (SIGINT/SIGTERM/SIGXCPU), we honour
-    // the request and skip the PRINTEMPS phase. Whatever incumbent Exact has
-    // is the best answer we can give.
     if interrupt_flag.is_set() {
         driver_log(
             args.verbose,
             "interrupt received during phase 1; skipping PRINTEMPS",
         );
-        emit_best_after_interrupt(&exact_run)?;
+        emit_best_after_interrupt(&scip_run)?;
         return Ok(());
     }
 
-    exact::flush_buffered_lines(&exact_run, true)
-        .map_err(|e| format!("failed to comment out Exact lines: {e}"))?;
+    scip::flush_buffered_lines(&scip_run, true)
+        .map_err(|e| format!("failed to comment out SCIP lines: {e}"))?;
 
     // -----------------------------------------------------------------
     // Phase 2: PRINTEMPS
@@ -303,7 +275,7 @@ fn run() -> Result<(), String> {
             let remaining = t - elapsed_total;
             if remaining <= 0.0 {
                 println!(
-                    "c exact-printemps: overall time budget already exhausted before PRINTEMPS"
+                    "c scip-printemps: overall time budget already exhausted before PRINTEMPS"
                 );
                 return Ok(());
             }
@@ -315,9 +287,16 @@ fn run() -> Result<(), String> {
     let p_log_path = args.save_dir.join("printemps_log.txt");
 
     match printemps_time {
-        Some(t) => println!("c exact-printemps: phase 2 (PRINTEMPS, budget={:.3}s)", t),
-        None => println!("c exact-printemps: phase 2 (PRINTEMPS, no time limit)"),
+        Some(t) => println!("c scip-printemps: phase 2 (PRINTEMPS, budget={:.3}s)", t),
+        None => println!("c scip-printemps: phase 2 (PRINTEMPS, no time limit)"),
     }
+
+    let initial_sol = if scip_incumbent_sol_path.exists() {
+        Some(scip_incumbent_sol_path.as_path())
+    } else {
+        None
+    };
+
     let p_run = printemps::run(printemps::PrintempsConfig {
         solver_path: &args.printemps_path,
         instance: &args.instance,
@@ -325,12 +304,7 @@ fn run() -> Result<(), String> {
         iteration_max: Some(-1),
         seed: args.seed,
         threads: args.threads,
-        initial_solution: Some(incumbent_sol_path.as_path()),
-        fixed_variable: if args.use_fixed_literals {
-            Some(fixed_literals_path.as_path())
-        } else {
-            None
-        },
+        initial_solution: initial_sol,
         extra_args: &args.extra_printemps,
         log_path: &p_log_path,
         child_slot: &child_slot,
@@ -344,16 +318,16 @@ fn run() -> Result<(), String> {
         ),
     );
 
-    // Fallback: PRINTEMPS produced no feasible solution but Exact captured one.
+    // Fallback: PRINTEMPS produced no feasible solution but SCIP captured one.
     let needs_fallback = matches!(
         p_run.verdict,
         printemps::PrintempsVerdict::Unknown | printemps::PrintempsVerdict::Unsupported
-    ) && exact_run.last_v_line.is_some();
+    ) && scip_run.last_v_line.is_some();
 
     if needs_fallback {
-        let v = exact_run.last_v_line.as_deref().unwrap();
+        let v = scip_run.last_v_line.as_deref().unwrap();
         printemps::emit_fallback(
-            "exact-printemps: PRINTEMPS did not improve; falling back to Exact incumbent",
+            "scip-printemps: PRINTEMPS did not improve; falling back to SCIP incumbent",
             v,
         )
         .map_err(|e| format!("failed to emit fallback: {e}"))?;
@@ -362,29 +336,27 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-fn emit_best_after_interrupt(exact_run: &exact::ExactRun) -> Result<(), String> {
+fn emit_best_after_interrupt(scip_run: &scip::ScipRun) -> Result<(), String> {
     use std::io::Write;
     let stdout = std::io::stdout();
     let mut h = stdout.lock();
-    match exact_run.verdict {
-        exact::Verdict::OptimumFound | exact::Verdict::Unsatisfiable => {
-            // Exact already produced a final answer; just emit it.
-            if let Some(ref s) = exact_run.last_s_line {
+    match scip_run.verdict {
+        scip::ScipVerdict::OptimumFound | scip::ScipVerdict::Unsatisfiable => {
+            if let Some(ref s) = scip_run.last_s_line {
                 writeln!(h, "{}", s).map_err(|e| e.to_string())?;
             }
-            if let Some(ref v) = exact_run.last_v_line {
+            if let Some(ref v) = scip_run.last_v_line {
                 writeln!(h, "{}", v).map_err(|e| e.to_string())?;
             }
         }
-        exact::Verdict::Satisfiable => {
-            // Best feasible-but-not-proven-optimal incumbent.
+        scip::ScipVerdict::Satisfiable => {
             writeln!(h, "s SATISFIABLE").map_err(|e| e.to_string())?;
-            if let Some(ref v) = exact_run.last_v_line {
+            if let Some(ref v) = scip_run.last_v_line {
                 writeln!(h, "{}", v).map_err(|e| e.to_string())?;
             }
         }
-        exact::Verdict::Unknown => {
-            if let Some(ref v) = exact_run.last_v_line {
+        scip::ScipVerdict::Unknown => {
+            if let Some(ref v) = scip_run.last_v_line {
                 writeln!(h, "s SATISFIABLE").map_err(|e| e.to_string())?;
                 writeln!(h, "{}", v).map_err(|e| e.to_string())?;
             } else {
@@ -399,7 +371,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::from(0),
         Err(msg) => {
-            eprintln!("exact-printemps: error: {msg}");
+            eprintln!("scip-printemps: error: {msg}");
             ExitCode::from(1)
         }
     }
