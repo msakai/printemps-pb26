@@ -72,7 +72,7 @@ pub fn run(cfg: ExactConfig<'_>) -> std::io::Result<ExactRun> {
         .arg("--print-uniform=0")
         .arg("--verbosity=1");
     if cfg.fixed_literals_path.is_some() {
-        command.arg("--log-fixed-lits");
+        command.arg("--log-fixed-lits=1");
     }
     command
         .args(cfg.extra_args)
