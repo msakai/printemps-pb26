@@ -21,10 +21,13 @@ echo "[pb] building PRINTEMPS pb_competition_2025_solver"
 echo "[pb] building driver binaries"
 # scip-printemps is optional. Set BUILD_SCIP_PRINTEMPS=ON to also build it.
 # When the `scip-from-source` feature is used (default), SCIP itself is linked
-# statically into scip-printemps; common system libraries (glibc, libstdc++,
-# libgcc_s, libgomp) remain dynamically linked because rust's `+crt-static`
-# cannot cover SCIP's C++ runtime. exact-printemps therefore always has to be
-# built in a separate cargo invocation when STATIC=ON.
+# statically into scip-printemps. With STATIC=ON we additionally pass
+# `-static-libstdc++ -static-libgcc` to the linker so that libstdc++ and
+# libgcc_s are absorbed into the binary too; glibc and libgomp remain
+# dynamically linked (rust's `+crt-static` cannot cover SCIP's C++ runtime, and
+# statically linking libgomp would risk multiple OpenMP runtimes coexisting).
+# exact-printemps therefore always has to be built in a separate cargo
+# invocation when STATIC=ON.
 BUILD_SCIP_PRINTEMPS="${BUILD_SCIP_PRINTEMPS:-OFF}"
 SCIP_PRINTEMPS_FEATURE="${SCIP_PRINTEMPS_FEATURE:-scip-from-source}"
 
@@ -33,8 +36,9 @@ if [ "$STATIC" = "ON" ]; then
   ( cd "$ROOT" && RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static" \
       cargo build --release --bin exact-printemps )
   if [ "$BUILD_SCIP_PRINTEMPS" = "ON" ]; then
-    echo "[pb] (2/2) scip-printemps with --features $SCIP_PRINTEMPS_FEATURE (dynamic crt)"
-    ( cd "$ROOT" && cargo build --release --bin scip-printemps \
+    echo "[pb] (2/2) scip-printemps with --features $SCIP_PRINTEMPS_FEATURE (static libstdc++/libgcc, dynamic glibc/libgomp)"
+    ( cd "$ROOT" && RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-static-libstdc++ -C link-arg=-static-libgcc" \
+        cargo build --release --bin scip-printemps \
         --features "$SCIP_PRINTEMPS_FEATURE" )
   fi
 else
@@ -73,5 +77,12 @@ if [ "$BUILD_SCIP_PRINTEMPS" = "ON" ] && [ "$SCIP_PRINTEMPS_FEATURE" = "scip-fro
   if ldd "$ROOT/bin/scip-printemps" | grep -E 'libscip|libsoplex'; then
     echo "ERROR: SCIP/SoPlex should be statically linked but appear in ldd output" >&2
     exit 1
+  fi
+  if [ "$STATIC" = "ON" ]; then
+    echo "[pb] checking scip-printemps does not dynamically link libstdc++/libgcc_s"
+    if ldd "$ROOT/bin/scip-printemps" | grep -E 'libstdc\+\+|libgcc_s'; then
+      echo "ERROR: libstdc++/libgcc_s should be statically linked but appear in ldd output" >&2
+      exit 1
+    fi
   fi
 fi
