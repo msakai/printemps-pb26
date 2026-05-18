@@ -32,11 +32,11 @@ fi
 if [ "$BUILD_SCIP_PRINTEMPS" = "ON" ]; then
   echo "[pb] exact-printemps + scip-printemps with --features $SCIP_PRINTEMPS_FEATURE"
   ( cd "$ROOT" && RUSTFLAGS="${RUSTFLAGS:-} ${RUST_STATIC_FLAGS}" \
-      cargo build --release --bins --features "$SCIP_PRINTEMPS_FEATURE" )
+      cargo build --release --bins --features "$SCIP_PRINTEMPS_FEATURE" --target x86_64-unknown-linux-gnu )
 else
   echo "[pb] exact-printemps"
   ( cd "$ROOT" && RUSTFLAGS="${RUSTFLAGS:-} ${RUST_STATIC_FLAGS}" \
-      cargo build --release --bin exact-printemps )
+      cargo build --release --bin exact-printemps --target x86_64-unknown-linux-gnu )
 fi
 
 mkdir -p "$ROOT/bin"
