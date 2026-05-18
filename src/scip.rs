@@ -217,8 +217,16 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
             continue;
         }
         // After `solve()`, local bounds at the focus (root) node equal the
-        // tightest bounds SCIP could prove globally for this variable. A
-        // binary variable with lb == ub is fixed by SCIP.
+        // tightest bounds SCIP could prove globally for this variable, and a
+        // binary variable with lb == ub is fixed by SCIP. Note that these
+        // global bounds are tightened by both primal reductions (preserving
+        // every feasible solution) and dual reductions (which use the
+        // objective cutoff and only preserve at least one optimal solution).
+        // So fixings may cut off feasible-but-suboptimal solutions whose
+        // objective is better than the current incumbent — at least one true
+        // optimum is still preserved, so handing these to PRINTEMPS as hard
+        // fixings is safe for optimization but is not equivalent to "fixed
+        // across all feasible solutions".
         let lb = var.lb();
         let ub = var.ub();
         if (ub - lb).abs() < 0.5 {
