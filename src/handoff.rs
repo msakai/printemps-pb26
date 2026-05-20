@@ -188,7 +188,9 @@ mod tests {
     fn write_printemps_empty_returns_false() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("out.sol");
-        assert!(!SolverHandoff::new().write_printemps_initial_solution(&p).unwrap());
+        assert!(!SolverHandoff::new()
+            .write_printemps_initial_solution(&p)
+            .unwrap());
     }
 
     #[test]
@@ -288,7 +290,8 @@ mod tests {
             dual_bound: Some(-1.5),
             ..Default::default()
         };
-        h.write_bounds_json(&p, "OPTIMUM_FOUND", 1.25, Some(0)).unwrap();
+        h.write_bounds_json(&p, "OPTIMUM_FOUND", 1.25, Some(0))
+            .unwrap();
         let s = fs::read_to_string(&p).unwrap();
         assert!(s.contains("\"status\": \"OPTIMUM_FOUND\""));
         assert!(s.contains("\"primal_bound\": 42"));
@@ -332,7 +335,9 @@ mod tests {
         SolverHandoff::new()
             .write_bounds_json(&p, "UNKNOWN", 0.5, None)
             .unwrap();
-        assert!(fs::read_to_string(&p).unwrap().contains("\"exit_code\": null"));
+        assert!(fs::read_to_string(&p)
+            .unwrap()
+            .contains("\"exit_code\": null"));
     }
 
     #[test]

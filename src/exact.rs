@@ -327,17 +327,26 @@ mod tests {
 
     #[test]
     fn verdict_optimum_found() {
-        assert_eq!(Verdict::from_status_line("s OPTIMUM FOUND"), Verdict::OptimumFound);
+        assert_eq!(
+            Verdict::from_status_line("s OPTIMUM FOUND"),
+            Verdict::OptimumFound
+        );
     }
 
     #[test]
     fn verdict_unsatisfiable() {
-        assert_eq!(Verdict::from_status_line("s UNSATISFIABLE"), Verdict::Unsatisfiable);
+        assert_eq!(
+            Verdict::from_status_line("s UNSATISFIABLE"),
+            Verdict::Unsatisfiable
+        );
     }
 
     #[test]
     fn verdict_satisfiable() {
-        assert_eq!(Verdict::from_status_line("s SATISFIABLE"), Verdict::Satisfiable);
+        assert_eq!(
+            Verdict::from_status_line("s SATISFIABLE"),
+            Verdict::Satisfiable
+        );
     }
 
     #[test]
@@ -357,12 +366,18 @@ mod tests {
 
     #[test]
     fn verdict_leading_whitespace() {
-        assert_eq!(Verdict::from_status_line("  s OPTIMUM FOUND"), Verdict::OptimumFound);
+        assert_eq!(
+            Verdict::from_status_line("  s OPTIMUM FOUND"),
+            Verdict::OptimumFound
+        );
     }
 
     #[test]
     fn verdict_trailing_newline() {
-        assert_eq!(Verdict::from_status_line("s SATISFIABLE\n"), Verdict::Satisfiable);
+        assert_eq!(
+            Verdict::from_status_line("s SATISFIABLE\n"),
+            Verdict::Satisfiable
+        );
     }
 
     #[test]
