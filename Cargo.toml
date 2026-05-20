@@ -36,6 +36,9 @@ scip-bundled = ["scip", "russcip/bundled"]
 # (glibc, libstdc++, etc.). Recommended for distributable artifacts.
 scip-from-source = ["scip", "russcip/from-source"]
 
+[dev-dependencies]
+tempfile = "3"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

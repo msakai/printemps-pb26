@@ -48,6 +48,60 @@ impl InterruptFlag {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nix::unistd::Pid;
+
+    #[test]
+    fn child_slot_initial_empty() {
+        assert!(ChildSlot::new().get().is_none());
+    }
+
+    #[test]
+    fn child_slot_set_and_get() {
+        let slot = ChildSlot::new();
+        slot.set(Some(Pid::from_raw(42)));
+        assert_eq!(slot.get(), Some(Pid::from_raw(42)));
+    }
+
+    #[test]
+    fn child_slot_clear() {
+        let slot = ChildSlot::new();
+        slot.set(Some(Pid::from_raw(1)));
+        slot.clear();
+        assert!(slot.get().is_none());
+    }
+
+    #[test]
+    fn child_slot_clone_shares_state() {
+        let slot = ChildSlot::new();
+        let clone = slot.clone();
+        slot.set(Some(Pid::from_raw(99)));
+        assert_eq!(clone.get(), Some(Pid::from_raw(99)));
+    }
+
+    #[test]
+    fn interrupt_flag_initial_false() {
+        assert!(!InterruptFlag::new().is_set());
+    }
+
+    #[test]
+    fn interrupt_flag_set() {
+        let flag = InterruptFlag::new();
+        flag.set();
+        assert!(flag.is_set());
+    }
+
+    #[test]
+    fn interrupt_flag_clone_shares_state() {
+        let flag = InterruptFlag::new();
+        let clone = flag.clone();
+        flag.set();
+        assert!(clone.is_set());
+    }
+}
+
 /// Install handlers for SIGINT, SIGTERM, SIGXCPU. Each received signal is
 /// forwarded to whichever child PID is currently registered in the slot.
 ///
