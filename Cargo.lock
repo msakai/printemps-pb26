@@ -636,6 +636,7 @@ dependencies = [
  "nix",
  "russcip",
  "signal-hook",
+ "tempfile",
 ]
 
 [[package]]
