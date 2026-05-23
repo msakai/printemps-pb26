@@ -24,13 +24,13 @@ Email: yuji.koguma@gmail.com}
 \maketitle
 
 \begin{abstract}
-PRINTEMPS is a metaheuristic solver originally developed for general integer linear programming (ILP) problems. It was extended to handle pseudo-Boolean (PB) problems for the Pseudo-Boolean Competition 2025 \cite{printemps-pb25}. For the Pseudo-Boolean Competition 2026, we submit three solvers: PRINTEMPS itself and two hybrid drivers, \texttt{exact-printemps} and \texttt{scip-printemps}, that run Exact \cite{exact} or SCIP \cite{scip} first and hand the incumbent and fixed variables over to PRINTEMPS as a warm start. We also widened the OPB coefficient representation from 32-bit to 64-bit signed integers.
+PRINTEMPS is a metaheuristic solver originally developed for general integer linear programming (ILP) problems. It was extended to handle pseudo-Boolean (PB) problems for the Pseudo-Boolean Competition 2025 \cite{printemps-pb25}. For the Pseudo-Boolean Competition 2026, we submit three solvers: PRINTEMPS itself and two hybrid drivers, \texttt{exact-printemps} and \texttt{scip-printemps}, that run Exact \cite{exact} or SCIP \cite{scip} first and hand the incumbent and fixed variables over to PRINTEMPS as a warm start. We also widened the OPB parser's coefficient range from 32-bit to 64-bit signed integers, although the internal arithmetic remains double-precision and therefore restricts the exactly representable range to roughly 53 bits.
 \end{abstract}
 
 \section{Introduction}
 PRINTEMPS (PoRtable INTEger Mathematical Programming Solver) is a metaheuristic solver developed by the first author for general integer linear programming (ILP) problems \cite{printemps}. The PB-specific extension and the rationale of the encoding of nonlinear terms and soft constraints are unchanged from our Pseudo-Boolean Competition 2025 submission, and we refer the reader to that description \cite{printemps-pb25} for the details. This document focuses on what is new for 2026:
 \begin{itemize}
-\item widened coefficient range from 32-bit to 64-bit signed integers (Sec.~\ref{sec:coeff});
+\item widened OPB-parser coefficient range from 32-bit to 64-bit signed integers, with a remaining 53-bit limitation on the internal double-precision arithmetic (Sec.~\ref{sec:coeff});
 \item the two hybrid solvers \texttt{exact-printemps} and \texttt{scip-printemps} that pair PRINTEMPS with an off-the-shelf complete PB / MIP solver (Sec.~\ref{sec:hybrid});
 \item minor PRINTEMPS-side improvements collected since the 2025 submission (Sec.~\ref{sec:other}).
 \end{itemize}
@@ -46,7 +46,9 @@ The hybrid drivers \texttt{exact-printemps} and \texttt{scip-printemps} forward 
 PRINTEMPS searches for solutions to an ILP using Weighted Tabu Search that minimizes an objective function penalized by constraint violations \cite{Nonobe.1998}, together with several ILP-specific enhancements such as instance size reduction, dependent variable extraction, neighborhood filtering, and incremental penalty evaluation \cite{Koguma.2024}. The PB-specific extensions---linearization of products of binary variables and the introduction of slack variables with weighted penalties for soft constraints---are described in detail in our 2025 submission \cite{printemps-pb25} and are reused unchanged.
 
 \subsection{Wider coefficient range}\label{sec:coeff}
-In the 2025 submission each OPB coefficient had to fit within the range of a 31-bit signed integer. For 2026 the OPB reader and the internal coefficient/objective accumulators have been migrated to \texttt{int64\_t}, so coefficients up to the range of a 63-bit signed integer are now accepted. This removes a class of overflow-related rejections we encountered on instances whose hard or soft weights are close to $2^{31}$.
+In the 2025 submission each OPB coefficient had to fit within the range of a 31-bit signed integer at the parser level. For 2026 the OPB reader and the metadata accumulators have been migrated to \texttt{int64\_t}, so coefficients up to the range of a 63-bit signed integer are accepted by the parser.
+
+Internally, however, PRINTEMPS represents coefficients as IEEE-754 double-precision floating-point values, whose mantissa carries only 53 bits. To avoid silently producing wrong answers when a coefficient cannot be represented exactly, the \texttt{pb\_competition\_2025\_solver} front-end inspects the bit width of the largest absolute coefficient (the \texttt{intsize} field of the OPB metadata) and, if it exceeds 53, prints \texttt{s UNSUPPORTED} and exits before solving. The hybrid drivers inherit this behavior because their second phase invokes the same PRINTEMPS executable. Compared to the 2025 submission this widens the supported range from 31 to 53 bits, but instances with truly 64-bit coefficients remain out of scope.
 
 \subsection{Warm-starting interfaces}\label{sec:warm-start}
 To make PRINTEMPS usable as the second phase of a hybrid pipeline, the bundled executable \texttt{pb\_competition\_2025\_solver} gained two new file-based command-line options:
