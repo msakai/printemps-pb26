@@ -226,6 +226,7 @@ fn run() -> Result<(), String> {
     );
     let scip_run = scip::run(scip::ScipConfig {
         instance: &args.instance,
+        has_objective: opb_info.has_objective,
         timeout_sec: scip_budget,
         seed: args.seed,
         threads: args.threads,

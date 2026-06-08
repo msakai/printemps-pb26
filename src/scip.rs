@@ -47,6 +47,11 @@ pub struct ScipRun {
 
 pub struct ScipConfig<'a> {
     pub instance: &'a Path,
+    /// Whether the instance carries an objective (`min:` line). For a pure
+    /// satisfaction instance (PBS) SCIP solves a constant zero objective and
+    /// reports `Status::Optimal` on the first feasible solution, so without
+    /// this flag the verdict would be misreported as `OptimumFound`.
+    pub has_objective: bool,
     pub timeout_sec: f64,
     pub seed: Option<i64>,
     pub threads: Option<i32>,
@@ -248,12 +253,7 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
     }
     handoff.fixed_vars = fixed_vars;
 
-    let verdict = match status {
-        Status::Optimal => ScipVerdict::OptimumFound,
-        Status::Infeasible => ScipVerdict::Unsatisfiable,
-        _ if handoff.incumbent.is_some() => ScipVerdict::Satisfiable,
-        _ => ScipVerdict::Unknown,
-    };
+    let verdict = classify_verdict(status, cfg.has_objective, handoff.incumbent.is_some());
 
     // Persistence.
     let _ = handoff.write_printemps_initial_solution(cfg.incumbent_sol_path);
@@ -261,7 +261,13 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
     let _ = handoff.write_bounds_json(cfg.bounds_path, verdict_label(verdict), elapsed_sec, None);
 
     let last_v_line = handoff.to_pb_v_line();
-    let last_o_value = primal_bound.map(|v| format!("{}", v));
+    // Only report an objective value for optimization instances; a PBS
+    // instance has no objective (its primal bound is the constant 0).
+    let last_o_value = if cfg.has_objective {
+        primal_bound.map(|v| format!("{}", v))
+    } else {
+        None
+    };
     let last_s_line = match verdict {
         ScipVerdict::OptimumFound => Some("s OPTIMUM FOUND".to_string()),
         ScipVerdict::Unsatisfiable => Some("s UNSATISFIABLE".to_string()),
@@ -333,6 +339,22 @@ fn looks_like_pb_var(name: &str) -> bool {
     }
 }
 
+/// Map SCIP's terminal [`Status`] to a [`ScipVerdict`].
+///
+/// The subtlety is `Status::Optimal`: on a pure satisfaction instance
+/// (`has_objective == false`) SCIP solves a constant zero objective, so
+/// "optimal" only certifies that a feasible solution exists. Such an instance
+/// must report `Satisfiable`, not `OptimumFound`.
+fn classify_verdict(status: Status, has_objective: bool, has_incumbent: bool) -> ScipVerdict {
+    match status {
+        Status::Optimal if has_objective => ScipVerdict::OptimumFound,
+        Status::Optimal => ScipVerdict::Satisfiable,
+        Status::Infeasible => ScipVerdict::Unsatisfiable,
+        _ if has_incumbent => ScipVerdict::Satisfiable,
+        _ => ScipVerdict::Unknown,
+    }
+}
+
 fn verdict_label(v: ScipVerdict) -> &'static str {
     match v {
         ScipVerdict::OptimumFound => "OPTIMUM_FOUND",
@@ -366,4 +388,64 @@ fn parse_param_value(s: &str) -> ParamValue {
         return ParamValue::Real(r);
     }
     ParamValue::Str
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn optimal_with_objective_is_optimum_found() {
+        assert_eq!(
+            classify_verdict(Status::Optimal, true, true),
+            ScipVerdict::OptimumFound
+        );
+    }
+
+    #[test]
+    fn optimal_without_objective_is_satisfiable() {
+        // A PBS (satisfaction) instance must not be reported as OPTIMUM FOUND
+        // just because SCIP solved its constant zero objective to optimality.
+        assert_eq!(
+            classify_verdict(Status::Optimal, false, true),
+            ScipVerdict::Satisfiable
+        );
+    }
+
+    #[test]
+    fn infeasible_is_unsatisfiable_regardless_of_objective() {
+        assert_eq!(
+            classify_verdict(Status::Infeasible, true, false),
+            ScipVerdict::Unsatisfiable
+        );
+        assert_eq!(
+            classify_verdict(Status::Infeasible, false, false),
+            ScipVerdict::Unsatisfiable
+        );
+    }
+
+    #[test]
+    fn nonterminal_with_incumbent_is_satisfiable() {
+        // e.g. a time limit hit after a feasible solution was found.
+        assert_eq!(
+            classify_verdict(Status::TimeLimit, true, true),
+            ScipVerdict::Satisfiable
+        );
+        assert_eq!(
+            classify_verdict(Status::TimeLimit, false, true),
+            ScipVerdict::Satisfiable
+        );
+    }
+
+    #[test]
+    fn nonterminal_without_incumbent_is_unknown() {
+        assert_eq!(
+            classify_verdict(Status::TimeLimit, true, false),
+            ScipVerdict::Unknown
+        );
+        assert_eq!(
+            classify_verdict(Status::TimeLimit, false, false),
+            ScipVerdict::Unknown
+        );
+    }
 }
