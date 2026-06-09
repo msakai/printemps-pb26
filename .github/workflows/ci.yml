@@ -35,6 +35,9 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --release --bins --features scip-bundled -- -D warnings
 
+      - name: cargo test
+        run: cargo test --release --features scip-bundled
+
       - name: Build
         run: CPU_ARCH=broadwell BUILD_SCIP_PRINTEMPS=ON ./build.sh
 
