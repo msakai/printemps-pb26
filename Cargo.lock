@@ -763,9 +763,9 @@ dependencies = [
 
 [[package]]
 name = "russcip"
-version = "0.5.1"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85243be39d2f8d94ee7185d6ded332d8a3c9dc2a701da98b1adf9224df69fee3"
+checksum = "e3b38a231c23b79f123e167db8cc45593bd03a09dd93b06c3af6a1d0fd09b3b8"
 dependencies = [
  "scip-sys",
 ]
