@@ -45,6 +45,26 @@ pub struct ScipRun {
     pub last_o_value: Option<String>,
 }
 
+impl ScipRun {
+    /// A non-terminal run carrying no incumbent, bounds, or output lines.
+    ///
+    /// Used when the SCIP phase is skipped or fails before producing a result,
+    /// so the driver can fall through to PRINTEMPS instead of aborting. The
+    /// verdict is [`ScipVerdict::Unknown`] and every `last_*` line is `None`,
+    /// which the driver already treats as "no SCIP answer to promote".
+    pub fn unknown() -> ScipRun {
+        ScipRun {
+            verdict: ScipVerdict::Unknown,
+            handoff: SolverHandoff::new(),
+            elapsed_sec: 0.0,
+            interrupted: false,
+            last_s_line: None,
+            last_v_line: None,
+            last_o_value: None,
+        }
+    }
+}
+
 pub struct ScipConfig<'a> {
     pub instance: &'a Path,
     /// Whether the instance carries an objective (`min:` line). For a pure
@@ -87,15 +107,10 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
 
     if cfg.interrupt_flag.is_set() {
         log_line(&mut log_file, "interrupt flag already set; skipping solve");
-        return Ok(ScipRun {
-            verdict: ScipVerdict::Unknown,
-            handoff: SolverHandoff::new(),
-            elapsed_sec: started.elapsed().as_secs_f64(),
-            interrupted: true,
-            last_s_line: None,
-            last_v_line: None,
-            last_o_value: None,
-        });
+        let mut run = ScipRun::unknown();
+        run.elapsed_sec = started.elapsed().as_secs_f64();
+        run.interrupted = true;
+        return Ok(run);
     }
 
     // Build the model. `read_prob` chooses a reader from the file extension,

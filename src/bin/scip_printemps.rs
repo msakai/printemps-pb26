@@ -224,7 +224,7 @@ fn run() -> Result<(), String> {
         "c scip-printemps: phase 1 (SCIP, budget={:.3}s)",
         scip_budget
     );
-    let scip_run = scip::run(scip::ScipConfig {
+    let scip_run = match scip::run(scip::ScipConfig {
         instance: &args.instance,
         has_objective: opb_info.has_objective,
         timeout_sec: scip_budget,
@@ -236,8 +236,17 @@ fn run() -> Result<(), String> {
         incumbent_sol_path: &scip_incumbent_sol_path,
         fixed_vars_path: &scip_fixed_vars_path,
         interrupt_flag: &interrupt_flag,
-    })
-    .map_err(|e| format!("SCIP phase failed: {e}"))?;
+    }) {
+        Ok(r) => r,
+        // A SCIP failure (e.g. an unreadable instance) must not abort the run:
+        // downgrade it to a comment and fall through to PRINTEMPS, which may
+        // still solve the instance. The error is buffered behind `c` so stdout
+        // keeps speaking PB-competition format.
+        Err(e) => {
+            println!("c scip-printemps: SCIP phase failed ({e}); continuing to PRINTEMPS");
+            scip::ScipRun::unknown()
+        }
+    };
     driver_log(
         args.verbose,
         &format!(
