@@ -1,6 +1,7 @@
 # Bug report: segfault when `Model` is dropped after `read_prob` fails
 
-- **Crate:** `russcip` 0.5.1 (with `scip-sys` 0.1.26)
+- **Crate:** `russcip` — found on 0.5.1 (with `scip-sys` 0.1.26); **also confirmed
+  present in 0.9.1, the latest release** (see "Status in 0.9.1" below).
 - **Symptom:** Segmentation fault (use-after-free / refcount underflow) when a
   `Model` is dropped after `read_prob` returns `Err`.
 - **Trigger in the wild:** Reading an OPB instance whose objective/constraints
@@ -96,6 +97,32 @@ pub(crate) fn vars(&self, capture: bool) -> BTreeMap<usize, *mut SCIP_Var> {
 |-----------------------------|----------------|----------------|-------------------|
 | `read_prob` success         | yes (vars/conss)| yes            | balanced, OK      |
 | `read_prob` failure (SCIP_INVALIDDATA) | **no** | **yes**        | over-release → UAF / segfault |
+
+## Status in 0.9.1 (latest)
+
+Verified against the russcip 0.9.1 source: **the bug is unchanged.** Both halves of
+the imbalance are still present (line numbers are 0.9.1):
+
+- `read_prob` still captures only on the success path — `src/model.rs:97` drops the
+  consumed `Model` on `Err`, and `src/scip.rs:149` runs the captures *after* the
+  fallible call:
+
+  ```rust
+  pub(crate) fn read_prob(&self, filename: &str) -> Result<(), Retcode> {
+      let filename = CString::new(filename).unwrap();
+      scip_call!(ffi::SCIPreadProb(self.raw, filename.as_ptr(), std::ptr::null_mut())); // early Err
+      self.vars(false, true);  // SKIPPED on the error path
+      self.conss(true);        // SKIPPED on the error path
+      Ok(())
+  }
+  ```
+
+- `ScipPtr::drop` (`src/scip.rs:1746`) still unconditionally releases all
+  `SCIPgetOrigVars` / `SCIPgetOrigConss` when SCIP is in `PROBLEM` (or later) stage —
+  identical to 0.5.1.
+
+So upgrading to 0.9.1 alone does **not** fix the crash; the issue needs an upstream
+fix (or the downstream workaround below).
 
 ## Reproduction
 
