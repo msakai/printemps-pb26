@@ -188,10 +188,10 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
 
     // Snapshot original variables before solving. SCIP's `vars()` returned
     // post-solve walks active (transformed) variables, which is empty for
-    // instances entirely resolved during presolve. The Rc<Variable> handles
-    // captured here stay valid through `solve()` because they share the
-    // SCIP pointer; their `lb()` / `ub()` after solve report the tightest
-    // proved bounds on the original variable.
+    // instances entirely resolved during presolve. Each `Variable` handle
+    // captured here holds a clone of the shared SCIP `Rc`, so the handles stay
+    // valid through `solve()`; their `lb()` / `ub()` after solve report the
+    // tightest proved bounds on the original variable.
     let original_vars: Vec<_> = problem.vars();
 
     // NOTE: russcip's `solve()` consumes the model, so we cannot install a
@@ -257,7 +257,9 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
             });
         }
         if let Some(ref sol) = best_sol {
-            let raw = sol.val(var.clone());
+            // russcip 0.9 `vars()` yields `Vec<Variable>` and `Solution::val`
+            // takes `&Variable` (0.5 returned `Rc<Variable>` taken by value).
+            let raw = sol.val(var);
             let v = if raw >= 0.5 { 1 } else { 0 };
             incumbent.push(VarAssignment { name, value: v });
         }
