@@ -14,7 +14,9 @@
 
 use crate::handoff::{SolverHandoff, VarAssignment};
 use crate::signals::InterruptFlag;
+use crate::verify::{self, VerifyOutcome};
 use russcip::prelude::*;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -269,6 +271,58 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
         handoff.incumbent = Some(incumbent);
     }
     handoff.fixed_vars = fixed_vars;
+
+    // Independently verify SCIP's incumbent against the original OPB with exact
+    // integer arithmetic. SCIP solves in f64 and can return an infeasible
+    // incumbent once coefficients exceed 2^53 (the f64 exact-integer limit). On
+    // any violation — or if the check cannot be completed exactly — discard the
+    // entire SCIP result: its bounds, verdict, and dual reductions all derive
+    // from the same lossy model and cannot be trusted. The driver then falls
+    // through to PRINTEMPS, and removing the persisted artifacts guarantees no
+    // bad warm-start is left behind from this (or an earlier) run.
+    if let Some(inc) = &handoff.incumbent {
+        let assignment: HashMap<u32, bool> = inc
+            .iter()
+            .filter_map(|a| {
+                a.name
+                    .strip_prefix('x')
+                    .and_then(|d| d.parse::<u32>().ok())
+                    .map(|idx| (idx, a.value == 1))
+            })
+            .collect();
+        let reject = match verify::verify_assignment(cfg.instance, &assignment) {
+            Ok(VerifyOutcome::Satisfied) => None,
+            Ok(VerifyOutcome::Violated { line, detail }) => Some(format!(
+                "SCIP incumbent violates constraint ending on line {line}: {detail}"
+            )),
+            Ok(VerifyOutcome::Unverifiable { reason }) => Some(format!(
+                "SCIP incumbent could not be verified exactly: {reason}"
+            )),
+            Err(e) => Some(format!(
+                "could not read instance to verify SCIP incumbent: {e}"
+            )),
+        };
+        if let Some(reason) = reject {
+            log_line(
+                &mut log_file,
+                &format!(
+                    "VERIFICATION REJECTED SCIP RESULT: {reason}; discarding and falling through to PRINTEMPS"
+                ),
+            );
+            let _ = std::fs::remove_file(cfg.incumbent_sol_path);
+            let _ = std::fs::remove_file(cfg.fixed_vars_path);
+            let mut run = ScipRun::unknown();
+            run.elapsed_sec = started.elapsed().as_secs_f64();
+            run.interrupted = cfg.interrupt_flag.is_set();
+            let _ = run.handoff.write_bounds_json(
+                cfg.bounds_path,
+                "DISCARDED_VERIFICATION",
+                run.elapsed_sec,
+                None,
+            );
+            return Ok(run);
+        }
+    }
 
     let verdict = classify_verdict(status, cfg.has_objective, handoff.incumbent.is_some());
 
