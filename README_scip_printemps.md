@@ -41,6 +41,8 @@ scip-printemps [OPTIONS] <instance.opb>
   --printemps-arg ARG     Extra argument to forward to PRINTEMPS (repeatable).
   --use-fixed-literals    Forward variables that SCIP has proved fixed
                           to PRINTEMPS via `-f` (default: disabled).
+  --scip-max-intsize N    Skip the SCIP phase when the instance header's
+                          intsize exceeds N (default: 53).
   --verbose               Enable driver-level logs on stderr.
   -h, --help              Show this help and exit.
 ```
@@ -63,6 +65,41 @@ solve is appended to `<save-dir>/scip_log.txt`.
   driver falls back to the SCIP incumbent and emits a final
   `s SATISFIABLE` / `v …` block based on it.
 
+## Solution verification and large coefficients
+
+SCIP solves in IEEE-754 `f64`, which represents integers exactly only up to
+`2^53`. On instances whose coefficients are larger, SCIP can return an
+incumbent that violates a constraint it believes satisfied — e.g. `a - b >= 1`
+where `a, b ≈ 2^64` loses the `±1` and the constraint looks trivially
+satisfiable. Two complementary guards protect against this.
+
+- **Incumbent verification (always on).** Before SCIP's incumbent is used or
+  persisted, the driver re-reads the original OPB and re-evaluates every
+  constraint with exact `i128` arithmetic. If any constraint is violated — or
+  the check cannot be completed exactly (a coefficient or running activity
+  outside `i128` range, or an unparsable token) — the **entire** SCIP result is
+  discarded: its incumbent, bounds, and verdict are dropped, the warm-start
+  files are removed, and the driver falls through to PRINTEMPS as if SCIP had
+  found nothing. The reason is recorded in `scip_log.txt`
+  (`VERIFICATION REJECTED SCIP RESULT: …`) and `scip_bounds.json` records
+  status `DISCARDED_VERIFICATION`. This catches *false-feasible* answers
+  regardless of cause.
+
+- **`intsize` skip (`--scip-max-intsize N`, default `53`).** PB-competition OPB
+  files carry an `intsize=` field in their header comment (the bit length of
+  the largest coefficient). When it exceeds `N`, the SCIP phase is skipped
+  entirely and the instance is handed straight to PRINTEMPS
+  (`c scip-printemps: skipping SCIP (intsize=… > …)`). The default `53` matches
+  the f64 exact-integer limit. This additionally guards failures that
+  verification *cannot* catch — a wrongly reported `UNSATISFIABLE` or a wrong
+  optimum has no incumbent to re-check — and avoids spending the SCIP budget on
+  instances it cannot handle reliably. Instances with no `intsize` header are
+  never skipped on this basis; the incumbent verification above still applies.
+
+Raise the threshold (e.g. `--scip-max-intsize 63`) to let SCIP attempt
+larger-coefficient instances and rely on verification to reject any bad result;
+set it very high to disable the skip altogether.
+
 ## Persisted state
 
 Under `--save-dir` (default `./.pb-scip-state`):
@@ -77,7 +114,10 @@ Under `--save-dir` (default `./.pb-scip-state`):
   via its `-f` option; otherwise it is written for auditing only.
 - `scip_bounds.json` — `{ status, primal_bound, dual_bound, elapsed_sec,
   exit_code }`. `dual_bound` is captured but is not yet forwarded to
-  PRINTEMPS.
+  PRINTEMPS. `status` is `DISCARDED_VERIFICATION` (with null bounds) when the
+  incumbent failed exact verification; in that case `scip_incumbent.sol` and
+  `scip_fixed_vars.txt` are removed so PRINTEMPS does not warm-start from a
+  rejected solution.
 
 The PRINTEMPS phase writes `printemps_log.txt` and `printemps_log.stderr.log`
 exactly as in `exact-printemps`.
