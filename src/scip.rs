@@ -280,8 +280,11 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
     let last_v_line = handoff.to_pb_v_line();
     // Only report an objective value for optimization instances; a PBS
     // instance has no objective (its primal bound is the constant 0).
+    // PB objectives are integral by construction, but SCIP returns the bound
+    // as an `f64` that can carry floating-point error (e.g. -81.00000000000001),
+    // so round to the nearest integer before formatting the `o …` line.
     let last_o_value = if cfg.has_objective {
-        primal_bound.map(|v| format!("{}", v))
+        primal_bound.map(|v| format!("{}", v.round() as i64))
     } else {
         None
     };
