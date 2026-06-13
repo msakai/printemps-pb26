@@ -72,4 +72,4 @@ jobs:
 #         run: bin/exact-printemps -t 60 --exact-time 30 --seed 12345 --use-fixed-literals test/instances/OPT-LIN-intsize=46.opb
 
       - name: Smoke Test (scip-printemps)
-        run: bin/scip-printemps -t 60 --scip-time 30 --seed 12345 --use-fixed-literals test/instances/OPT-LIN-intsize=46.opb
+        run: bin/scip-printemps -t 60 --scip-time 30 --seed 1331088797 -j 1 --use-fixed-literals test/instances/OPT-LIN-intsize=46.opb
