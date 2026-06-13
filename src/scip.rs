@@ -206,22 +206,16 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
         &format!("status={:?} elapsed={:.3}s", status, elapsed_sec),
     );
 
-    let primal_bound = {
-        let v = solved.obj_val();
-        if v.is_finite() {
-            Some(v)
-        } else {
-            None
-        }
-    };
-    let dual_bound = {
-        let v = solved.best_bound();
-        if v.is_finite() {
-            Some(v)
-        } else {
-            None
-        }
-    };
+    // SCIP represents ±∞ with a large *finite* sentinel (`numerics/infinity`,
+    // default 1e20), so `f64::is_finite` alone is not enough to reject a missing
+    // bound: the primal bound before any feasible solution is found comes back
+    // as +infinity, which `is_finite` accepts and the driver would otherwise
+    // emit as a bogus `o 100000000000000000000`. Query SCIP's actual infinity
+    // (the driver never overrides it, but read it rather than hardcode 1e20) and
+    // treat anything at or beyond it as "no bound".
+    let scip_infinity = solved.param::<f64>("numerics/infinity");
+    let primal_bound = finite_bound(solved.obj_val(), scip_infinity);
+    let dual_bound = finite_bound(solved.best_bound(), scip_infinity);
 
     let mut handoff = SolverHandoff::new();
     handoff.primal_bound = primal_bound;
@@ -345,6 +339,21 @@ pub fn flush_buffered_lines(run: &ScipRun, as_comments: bool) -> std::io::Result
     h.flush()
 }
 
+/// Convert a raw SCIP objective / bound into a real, finite bound.
+///
+/// SCIP encodes ±∞ as a large *finite* sentinel (`numerics/infinity`, default
+/// 1e20), so a missing bound — e.g. the primal bound before any feasible
+/// solution is found — comes back as `+infinity`. `f64::is_finite` accepts that
+/// sentinel, so it must be rejected explicitly against SCIP's own `infinity`;
+/// otherwise the driver emits it verbatim as a bogus `o 100000000000000000000`.
+fn finite_bound(value: f64, infinity: f64) -> Option<f64> {
+    if value.is_finite() && value.abs() < infinity {
+        Some(value)
+    } else {
+        None
+    }
+}
+
 fn looks_like_pb_var(name: &str) -> bool {
     // PB variables are conventionally named `xN`. SCIP may introduce auxiliary
     // variables (e.g. for non-linear / soft constraint relaxation) that do not
@@ -452,6 +461,32 @@ mod tests {
             classify_verdict(Status::TimeLimit, false, true),
             ScipVerdict::Satisfiable
         );
+    }
+
+    #[test]
+    fn finite_bound_rejects_scip_infinity_sentinel() {
+        // SCIP's default numerics/infinity. A missing bound (e.g. the primal
+        // bound before any feasible solution) is returned as exactly +infinity,
+        // and the sentinel is a finite f64, so it must be rejected here.
+        assert_eq!(finite_bound(1e20, 1e20), None);
+        assert_eq!(finite_bound(-1e20, 1e20), None);
+        assert_eq!(finite_bound(2e20, 1e20), None);
+    }
+
+    #[test]
+    fn finite_bound_rejects_non_finite() {
+        assert_eq!(finite_bound(f64::INFINITY, 1e20), None);
+        assert_eq!(finite_bound(f64::NEG_INFINITY, 1e20), None);
+        assert_eq!(finite_bound(f64::NAN, 1e20), None);
+    }
+
+    #[test]
+    fn finite_bound_accepts_real_values() {
+        assert_eq!(finite_bound(0.0, 1e20), Some(0.0));
+        assert_eq!(finite_bound(1.93e9, 1e20), Some(1.93e9));
+        assert_eq!(finite_bound(-42.0, 1e20), Some(-42.0));
+        // Just below the sentinel is still a legitimate bound.
+        assert_eq!(finite_bound(9.99e19, 1e20), Some(9.99e19));
     }
 
     #[test]
