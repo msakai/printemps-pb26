@@ -12,3 +12,4 @@ pub mod printemps;
 #[cfg(feature = "scip")]
 pub mod scip;
 pub mod signals;
+pub mod verify;
