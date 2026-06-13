@@ -1,0 +1,57 @@
+name: Debug
+
+on:
+  push:
+
+jobs:
+  build:
+    name: build (linux x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show env info
+        run: |
+          lscpu
+          dpkg -l | grep libc
+
+      - name: Install valgrind
+        run: |
+          sudo apt-get update --yes
+          sudo apt-get install --yes --no-install-recommends valgrind
+          valgrind --version
+
+      - name: Download
+        run: |
+          curl -oprintemps_pb26.tar.xz -L --insecure https://github.com/msakai/printemps-pb26/releases/download/PB26-submission/printemps_pb26.tar.xz
+          tar axf printemps_pb26.tar.xz
+          ldd printemps_pb26/bin/scip-printemps
+
+      - name: Debug
+        continue-on-error: true
+        run: |
+          cd printemps_pb26
+          bin/scip-printemps -t 120 --scip-time 60 --seed 1331088797 -j 1 --use-fixed-literals ../OPT-LIN-intsize=46.opb
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pb-scip-state
+          path: printemps_pb26/.pb-scip-state
+          if-no-files-found: error
+          include-hidden-files: true
+
+      - name: Debug (with valgrind)
+        continue-on-error: true
+        run: |
+          cd printemps_pb26
+          rm -r .pb-scip-state
+          valgrind bin/scip-printemps -t 120 --scip-time 60 --seed 1331088797 -j 1 --use-fixed-literals ../OPT-LIN-intsize=46.opb
+
+      - name: Upload artifact (with valgrind)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pb-scip-state-valgrind
+          path: printemps_pb26/.pb-scip-state
+          if-no-files-found: error
+          include-hidden-files: true
