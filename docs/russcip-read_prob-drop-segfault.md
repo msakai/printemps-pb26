@@ -1,5 +1,7 @@
 # Bug report: segfault when `Model` is dropped after `read_prob` fails
 
+This problem is reported as https://github.com/scipopt/russcip/issues/281 .
+
 - **Crate:** `russcip` — found on 0.5.1 (with `scip-sys` 0.1.26); **also confirmed
   present in 0.9.1, the latest release** (see "Status in 0.9.1" below).
 - **Symptom:** Segmentation fault (use-after-free / refcount underflow) when a
@@ -129,8 +131,7 @@ fix (or the downstream workaround below).
 `bad.opb` (coefficient `2^67 = 147573952589676412928 >= 1e20`):
 
 ```
-min: +147573952589676412928 x1 ;
-+1 x1 >= 1 ;
++147573952589676412928 x1 >= 1 ;
 ```
 
 ```rust
