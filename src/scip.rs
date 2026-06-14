@@ -8,11 +8,12 @@
 //! PRINTEMPS even though PRINTEMPS does not yet read them.
 //!
 //! Today the PB-competition output (`s …`, `v …`) is emitted only after
-//! `solve()` returns. SCIP's console output is suppressed (`hide_output()` plus
-//! a quiet message handler), but its messages are tee'd to `scip_messages.log`
-//! so the run can detect numerical-reliability warnings and demote an untrusted
-//! verdict; a separate driver-level log file captures commentary from this
-//! module.
+//! `solve()` returns. SCIP's console output is suppressed by setting the message
+//! handler quiet (rather than by lowering `display/verblevel`, which would also
+//! hide the numerical-trouble messages we want to detect), but its messages are
+//! tee'd to `scip_messages.log` so the run can detect numerical-reliability
+//! warnings and demote an untrusted verdict; a separate driver-level log file
+//! captures commentary from this module.
 
 use crate::handoff::{SolverHandoff, VarAssignment};
 use crate::signals::InterruptFlag;
@@ -128,7 +129,20 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
 
     // Build the model. `read_prob` chooses a reader from the file extension,
     // so a `.opb` / `.pbo` / `.wbo` file dispatches to SCIP's PB reader.
-    let base = Model::new().hide_output();
+    //
+    // Raise SCIP's verbosity to FULL (SCIP_VERBLEVEL_FULL == 5) rather than
+    // calling `hide_output()`. The "numerical troubles" lines we scan for are
+    // *not* warnings: they are info-channel messages gated by
+    // `display/verblevel` (see `solve.c`'s `SCIPmessagePrintVerbInfo` and
+    // `lp.c`'s `lpNumericalTroubleMessage`). `hide_output()` sets verblevel to 0
+    // (SCIP_VERBLEVEL_NONE), which filters them out at the source before they
+    // ever reach the message handler / logfile, so they could never be detected.
+    // Many of these messages (every non-root node, plus all the LP retry/recovery
+    // variants) are emitted only at FULL, so HIGH would still miss them. The
+    // console copy stays silent because `install_message_logfile` (below) sets
+    // the message handler quiet; only the logfile receives the now-generated
+    // output.
+    let base = Model::new().set_display_verbosity(5);
 
     // Tee SCIP's own messages to a file *before* reading the problem, so reader
     // and presolve warnings ("out of range") are captured alongside solve-time
@@ -464,13 +478,18 @@ fn finite_bound(value: f64, infinity: f64) -> Option<f64> {
     }
 }
 
-/// Tee SCIP's own message output (warnings included) into `path` so the caller
-/// can scan it for numerical-reliability warnings after the solve.
+/// Tee SCIP's own message output into `path` so the caller can scan it for
+/// numerical-reliability warnings after the solve.
 ///
-/// SCIP's message handler copies *every* channel — including warnings, which are
-/// emitted regardless of `display/verblevel` — into a log file when one is set,
-/// while `SCIPsetMessagehdlrQuiet` only suppresses the console (stderr) copy. So
-/// a logfile + quiet pair captures warnings to disk with no stderr noise. The
+/// SCIP's message handler copies whatever it actually emits — warnings *and*
+/// info-channel output — into a log file when one is set, while
+/// `SCIPsetMessagehdlrQuiet` only suppresses the console (stderr/stdout) copy. So
+/// a logfile + quiet pair captures everything to disk with no console noise.
+/// Crucially, the messages must first be *generated*: warnings are ungated, but
+/// the "numerical troubles" lines are info-channel messages gated by
+/// `display/verblevel`, so the caller raises verbosity to FULL before solving
+/// (see the `Model::new().set_display_verbosity(5)` call in [`run`]); otherwise
+/// they would be filtered out at the source and never reach this logfile. The
 /// handler opens the file in append mode, so any stale file (from a reused
 /// save-dir) is removed first to avoid detecting a previous run's warnings.
 /// Best-effort: on any failure the guard is simply absent and the solve proceeds
