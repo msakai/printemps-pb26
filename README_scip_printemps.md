@@ -67,11 +67,15 @@ solve is appended to `<save-dir>/scip_log.txt`.
 
 ## Solution verification and large coefficients
 
-SCIP solves in IEEE-754 `f64`, which represents integers exactly only up to
-`2^53`. On instances whose coefficients are larger, SCIP can return an
-incumbent that violates a constraint it believes satisfied — e.g. `a - b >= 1`
-where `a, b ≈ 2^64` loses the `±1` and the constraint looks trivially
-satisfiable. Two complementary guards protect against this.
+SCIP solves in IEEE-754 `f64`, so its results are only as reliable as double
+precision allows. This bites in two distinct ways. First, `f64` represents
+integers exactly only up to `2^53`: on instances with larger coefficients SCIP
+can return an incumbent that violates a constraint it believes satisfied — e.g.
+`a - b >= 1` where `a, b ≈ 2^64` loses the `±1` and the constraint looks
+trivially satisfiable. Second, even with smaller coefficients SCIP's LP
+relaxations can run into numerical instability mid-solve, which can corrupt the
+dual bound and therefore any optimality or infeasibility *proof* built on it.
+Three complementary guards protect against these failure modes.
 
 - **Incumbent verification (always on).** Before SCIP's incumbent is used or
   persisted, the driver re-reads the original OPB and re-evaluates every
@@ -84,6 +88,28 @@ satisfiable. Two complementary guards protect against this.
   (`VERIFICATION REJECTED SCIP RESULT: …`) and `scip_bounds.json` records
   status `DISCARDED_VERIFICATION`. This catches *false-feasible* answers
   regardless of cause.
+
+- **Numerical-reliability guard (always on).** SCIP's message output is tee'd to
+  `scip_messages.log` and scanned for the strings `numerical troubles` (the LP
+  solver giving up on a node and falling back to a pseudo-solution) and
+  `out of range` (a coefficient the reader/presolver could not represent). When
+  either appears, SCIP's *proof* — not just one incumbent — is suspect, so the
+  driver demotes the verdict (`OPTIMUM FOUND` → `SATISFIABLE`; `UNSATISFIABLE` is
+  dropped entirely, as both proofs lean on a possibly-corrupt dual bound) and
+  discards the dual-derived information: the dual bound and the fixed-variable
+  list are cleared, because root fixings come partly from dual reductions and a
+  bad dual bound could fix a variable to the wrong value and steer PRINTEMPS away
+  from the optimum. The independently verified incumbent survives as a warm
+  start / fallback (it is a concrete assignment, not a bound), and a plain
+  `SATISFIABLE` verdict is left unchanged — it asserts only feasibility, which
+  the verification above has already confirmed. The trigger is surfaced on stdout
+  as `c scip-printemps: SCIP reported numerical-reliability warnings (…); not
+  trusting its OPTIMUM/UNSAT verdict, handing off to PRINTEMPS` and recorded in
+  `scip_log.txt`. (Detecting these messages requires running SCIP at `FULL`
+  verbosity: the `numerical troubles` lines are info-channel messages gated by
+  `display/verblevel`, not warnings, so a quieter setting would drop them at the
+  source before they ever reached `scip_messages.log`. The console copy is kept
+  silent by the message handler's quiet flag instead.)
 
 - **`intsize` skip (`--scip-max-intsize N`, default `53`).** PB-competition OPB
   files carry an `intsize=` field in their header comment (the bit length of
