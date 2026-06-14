@@ -371,6 +371,7 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
             let mut run = ScipRun::unknown();
             run.elapsed_sec = started.elapsed().as_secs_f64();
             run.interrupted = cfg.interrupt_flag.is_set();
+            run.numerical_warning = numerical_warning;
             let _ = run.handoff.write_bounds_json(
                 cfg.bounds_path,
                 "DISCARDED_VERIFICATION",
