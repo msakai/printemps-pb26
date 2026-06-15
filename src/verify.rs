@@ -31,6 +31,19 @@ pub enum VerifyOutcome {
     Unverifiable { reason: String },
 }
 
+/// Outcome of exactly recomputing the objective value for an assignment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ObjectiveOutcome {
+    /// The objective evaluated exactly to this value (the `min:`/`max:`
+    /// weighted sum of literals plus any constant offset).
+    Value(i128),
+    /// The OPB file has no objective line (a pure satisfaction instance).
+    NoObjective,
+    /// The objective could not be evaluated exactly; the value must not be
+    /// trusted on the strength of this check.
+    Unverifiable { reason: String },
+}
+
 /// Check `assignment` (variable index → boolean value) against every constraint
 /// in the OPB file at `instance`. The objective line (`min:` / `max:`) is
 /// ignored, since it does not constrain feasibility.
@@ -75,6 +88,139 @@ pub fn verify_assignment(
     }
 
     Ok(VerifyOutcome::Satisfied)
+}
+
+/// Exactly recompute the objective value of `assignment` from the OPB file at
+/// `instance`. SCIP reports the objective of its incumbent as an `f64`, which
+/// only represents integers exactly up to 2^53; on large-coefficient instances
+/// the reported value can disagree with the true integer objective. This
+/// re-reads the original OPB text and re-evaluates the `min:`/`max:` line with
+/// `i128` arithmetic, so such mismatches can be detected.
+///
+/// The weighted sum is returned as written (the objective's own sense); callers
+/// compare it against SCIP's reported value, whose sign convention matches the
+/// OPB. Like [`verify_assignment`], the check is conservative: anything that
+/// cannot be evaluated exactly yields [`ObjectiveOutcome::Unverifiable`].
+pub fn evaluate_objective(
+    instance: &Path,
+    assignment: &HashMap<u32, bool>,
+) -> io::Result<ObjectiveOutcome> {
+    let f = File::open(instance)?;
+    let r = BufReader::new(f);
+
+    // Same `;`-terminated tokenization as `verify_assignment`; accumulate
+    // tokens until a `;` and evaluate the first objective statement found.
+    let mut pending: Vec<String> = Vec::new();
+    let mut stmt_line = 0usize;
+
+    for (idx, line) in r.lines().enumerate() {
+        let line = line?;
+        let line_no = idx + 1;
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('*') {
+            continue;
+        }
+        for tok in line.split_whitespace() {
+            if pending.is_empty() {
+                stmt_line = line_no;
+            }
+            if let Some(stripped) = tok.strip_suffix(';') {
+                if !stripped.is_empty() {
+                    pending.push(stripped.to_string());
+                }
+                if matches!(
+                    pending.first().map(String::as_str),
+                    Some("min:" | "max:" | "min" | "max")
+                ) {
+                    return Ok(eval_objective(&pending, assignment, stmt_line));
+                }
+                pending.clear();
+            } else {
+                pending.push(tok.to_string());
+            }
+        }
+    }
+
+    Ok(ObjectiveOutcome::NoObjective)
+}
+
+/// Evaluate the terms of an objective statement (`min:`/`max:` keyword already
+/// confirmed as `tokens[0]`). Mirrors the term-folding of [`eval_constraint`],
+/// but there is no operator or right-hand side, and a literal-less coefficient
+/// is a legal constant offset rather than a malformed term.
+fn eval_objective(
+    tokens: &[String],
+    assignment: &HashMap<u32, bool>,
+    line: usize,
+) -> ObjectiveOutcome {
+    let mut total: i128 = 0;
+    let mut term_coeff: Option<i128> = None;
+    let mut term_val: i128 = 1;
+    let mut term_has_lit = false;
+
+    macro_rules! flush_term {
+        () => {
+            if let Some(c) = term_coeff.take() {
+                // A coefficient with no literal is a constant offset.
+                let factor = if term_has_lit { term_val } else { 1 };
+                match c
+                    .checked_mul(factor)
+                    .and_then(|contrib| total.checked_add(contrib))
+                {
+                    Some(v) => total = v,
+                    None => {
+                        return ObjectiveOutcome::Unverifiable {
+                            reason: format!("line {line}: objective exceeds i128 range"),
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    for t in tokens.iter().skip(1) {
+        let t = t.as_str();
+        if is_literal_start(t) {
+            if term_coeff.is_none() {
+                return ObjectiveOutcome::Unverifiable {
+                    reason: format!("line {line}: literal '{t}' without a coefficient"),
+                };
+            }
+            match literal_value(t, assignment) {
+                LitVal::Val(v) => {
+                    term_val *= v as i128;
+                    term_has_lit = true;
+                }
+                LitVal::MissingVar => {
+                    return ObjectiveOutcome::Unverifiable {
+                        reason: format!("line {line}: variable of literal '{t}' not in assignment"),
+                    }
+                }
+                LitVal::Bad => {
+                    return ObjectiveOutcome::Unverifiable {
+                        reason: format!("line {line}: malformed literal '{t}'"),
+                    }
+                }
+            }
+        } else {
+            flush_term!();
+            match parse_int(t) {
+                Some(v) => {
+                    term_coeff = Some(v);
+                    term_val = 1;
+                    term_has_lit = false;
+                }
+                None => {
+                    return ObjectiveOutcome::Unverifiable {
+                        reason: format!("line {line}: unparsable token '{t}'"),
+                    }
+                }
+            }
+        }
+    }
+    flush_term!();
+
+    ObjectiveOutcome::Value(total)
 }
 
 /// Evaluate one complete `;`-terminated statement. Objective statements are
@@ -382,5 +528,100 @@ mod tests {
             verify_assignment(f.path(), &assign(&[(1, true)])).unwrap(),
             VerifyOutcome::Satisfied
         );
+    }
+
+    #[test]
+    fn objective_basic_sum() {
+        let f = make_tmp("min: +5 x1 +3 x2 ;\n+1 x1 >= 1 ;\n");
+        // 5*1 + 3*0 = 5
+        assert_eq!(
+            evaluate_objective(f.path(), &assign(&[(1, true), (2, false)])).unwrap(),
+            ObjectiveOutcome::Value(5)
+        );
+        // 5*1 + 3*1 = 8
+        assert_eq!(
+            evaluate_objective(f.path(), &assign(&[(1, true), (2, true)])).unwrap(),
+            ObjectiveOutcome::Value(8)
+        );
+    }
+
+    #[test]
+    fn objective_negative_coeff_and_constant_offset() {
+        // A literal-less coefficient is a constant offset: 7 + (-2)*x1.
+        let f = make_tmp("min: 7 -2 x1 ;\n+1 x1 >= 0 ;\n");
+        assert_eq!(
+            evaluate_objective(f.path(), &assign(&[(1, false)])).unwrap(),
+            ObjectiveOutcome::Value(7)
+        );
+        assert_eq!(
+            evaluate_objective(f.path(), &assign(&[(1, true)])).unwrap(),
+            ObjectiveOutcome::Value(5)
+        );
+    }
+
+    #[test]
+    fn objective_product_term() {
+        // +4 x1 x2 contributes 4 only when both literals are true.
+        let f = make_tmp("min: +4 x1 x2 +1 x3 ;\n+1 x3 >= 0 ;\n");
+        assert_eq!(
+            evaluate_objective(f.path(), &assign(&[(1, true), (2, true), (3, false)])).unwrap(),
+            ObjectiveOutcome::Value(4)
+        );
+        assert_eq!(
+            evaluate_objective(f.path(), &assign(&[(1, true), (2, false), (3, true)])).unwrap(),
+            ObjectiveOutcome::Value(1)
+        );
+    }
+
+    #[test]
+    fn objective_negated_literal() {
+        // ~x1 contributes (1 - x1).
+        let f = make_tmp("min: +3 ~x1 ;\n+1 x1 >= 0 ;\n");
+        assert_eq!(
+            evaluate_objective(f.path(), &assign(&[(1, false)])).unwrap(),
+            ObjectiveOutcome::Value(3)
+        );
+        assert_eq!(
+            evaluate_objective(f.path(), &assign(&[(1, true)])).unwrap(),
+            ObjectiveOutcome::Value(0)
+        );
+    }
+
+    #[test]
+    fn objective_absent_is_no_objective() {
+        let f = make_tmp("+1 x1 +1 x2 >= 1 ;\n");
+        assert_eq!(
+            evaluate_objective(f.path(), &assign(&[(1, true), (2, false)])).unwrap(),
+            ObjectiveOutcome::NoObjective
+        );
+    }
+
+    #[test]
+    fn objective_large_i128_coefficient() {
+        // 2^63, beyond i64 but within i128.
+        let f = make_tmp("min: +9223372036854775808 x1 ;\n+1 x1 >= 0 ;\n");
+        assert_eq!(
+            evaluate_objective(f.path(), &assign(&[(1, true)])).unwrap(),
+            ObjectiveOutcome::Value(9223372036854775808)
+        );
+    }
+
+    #[test]
+    fn objective_coefficient_out_of_i128_is_unverifiable() {
+        let huge = "1".to_string() + &"0".repeat(40);
+        let f = make_tmp(&format!("min: +{huge} x1 ;\n+1 x1 >= 0 ;\n"));
+        assert!(matches!(
+            evaluate_objective(f.path(), &assign(&[(1, true)])).unwrap(),
+            ObjectiveOutcome::Unverifiable { .. }
+        ));
+    }
+
+    #[test]
+    fn objective_missing_variable_is_unverifiable() {
+        let f = make_tmp("min: +1 x1 +1 x2 ;\n+1 x1 >= 0 ;\n");
+        assert!(matches!(
+            evaluate_objective(f.path(), &assign(&[(1, true)])).unwrap(),
+            ObjectiveOutcome::Unverifiable { .. }
+        ));
     }
 }
