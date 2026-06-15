@@ -288,6 +288,12 @@ fn run() -> Result<(), String> {
             }
         }
     };
+    if let Some(w) = &scip_run.numerical_warning {
+        println!(
+            "c scip-printemps: SCIP reported numerical-reliability warnings ({w}); \
+             not trusting its OPTIMUM/UNSAT verdict, handing off to PRINTEMPS"
+        );
+    }
     driver_log(
         args.verbose,
         &format!(

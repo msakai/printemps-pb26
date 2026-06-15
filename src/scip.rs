@@ -8,15 +8,20 @@
 //! PRINTEMPS even though PRINTEMPS does not yet read them.
 //!
 //! Today the PB-competition output (`s …`, `v …`) is emitted only after
-//! `solve()` returns. SCIP's own message output is suppressed
-//! (`hide_output()`); a separate driver-level log file captures progress
-//! commentary written by this module.
+//! `solve()` returns. SCIP's console output is suppressed by setting the message
+//! handler quiet (rather than by lowering `display/verblevel`, which would also
+//! hide the numerical-trouble messages we want to detect), but its messages are
+//! tee'd to `scip_messages.log` so the run can detect numerical-reliability
+//! warnings and demote an untrusted verdict; a separate driver-level log file
+//! captures commentary from this module.
 
 use crate::handoff::{SolverHandoff, VarAssignment};
 use crate::signals::InterruptFlag;
 use crate::verify::{self, VerifyOutcome};
+use russcip::ffi;
 use russcip::prelude::*;
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -45,6 +50,12 @@ pub struct ScipRun {
     pub last_v_line: Option<String>,
     /// `o …` value (objective) corresponding to `handoff.primal_bound`.
     pub last_o_value: Option<String>,
+    /// Set when SCIP emitted numerical-reliability warnings ("numerical
+    /// troubles" / "out of range") during the solve. Its presence means the
+    /// verdict has already been demoted (no `OPTIMUM`/`UNSAT` is claimed) and
+    /// dual-derived info (dual bound, fixed vars) has been discarded; the driver
+    /// surfaces it as a `c …` comment.
+    pub numerical_warning: Option<String>,
 }
 
 impl ScipRun {
@@ -63,6 +74,7 @@ impl ScipRun {
             last_s_line: None,
             last_v_line: None,
             last_o_value: None,
+            numerical_warning: None,
         }
     }
 }
@@ -117,8 +129,29 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
 
     // Build the model. `read_prob` chooses a reader from the file extension,
     // so a `.opb` / `.pbo` / `.wbo` file dispatches to SCIP's PB reader.
-    let mut model_builder = Model::new()
-        .hide_output()
+    //
+    // Raise SCIP's verbosity to FULL (SCIP_VERBLEVEL_FULL == 5) rather than
+    // calling `hide_output()`. The "numerical troubles" lines we scan for are
+    // *not* warnings: they are info-channel messages gated by
+    // `display/verblevel` (see `solve.c`'s `SCIPmessagePrintVerbInfo` and
+    // `lp.c`'s `lpNumericalTroubleMessage`). `hide_output()` sets verblevel to 0
+    // (SCIP_VERBLEVEL_NONE), which filters them out at the source before they
+    // ever reach the message handler / logfile, so they could never be detected.
+    // Many of these messages (every non-root node, plus all the LP retry/recovery
+    // variants) are emitted only at FULL, so HIGH would still miss them. The
+    // console copy stays silent because `install_message_logfile` (below) sets
+    // the message handler quiet; only the logfile receives the now-generated
+    // output.
+    let base = Model::new().set_display_verbosity(5);
+
+    // Tee SCIP's own messages to a file *before* reading the problem, so reader
+    // and presolve warnings ("out of range") are captured alongside solve-time
+    // ones ("numerical troubles"). The captured log lets us distrust SCIP's
+    // verdict when it flags numerical unreliability (see after `solve()`).
+    let messages_path = cfg.log_path.with_file_name("scip_messages.log");
+    install_message_logfile(&base, &messages_path, &mut log_file);
+
+    let mut model_builder = base
         .set_real_param("limits/time", cfg.timeout_sec)
         .map_err(|e| format!("set limits/time failed: {e:?}"))?;
 
@@ -208,6 +241,27 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
         &format!("status={:?} elapsed={:.3}s", status, elapsed_sec),
     );
 
+    // Close (and thereby flush) the SCIP message logfile, then scan it for the
+    // warnings that mean the solve may have produced an unreliable verdict.
+    // A numerically-troubled solve can compute a corrupted dual bound and so
+    // prune the true optimum (a "false" OPTIMUM) or wrongly declare a feasible
+    // instance infeasible (a "false" UNSAT) — neither of which the exact
+    // incumbent verifier below can catch. When detected, the verdict is demoted
+    // and dual-derived information (dual bound, fixed vars) is discarded; the
+    // independently-verified incumbent, if any, is kept as a warm start.
+    unsafe {
+        ffi::SCIPsetMessagehdlrLogfile(solved.scip_ptr(), std::ptr::null());
+    }
+    let numerical_warning = detect_numerical_trouble(&messages_path);
+    if let Some(w) = &numerical_warning {
+        log_line(
+            &mut log_file,
+            &format!(
+                "SCIP emitted numerical-reliability warnings ({w}); demoting verdict and discarding dual-derived info"
+            ),
+        );
+    }
+
     // SCIP represents ±∞ with a large *finite* sentinel (`numerics/infinity`,
     // default 1e20), so `f64::is_finite` alone is not enough to reject a missing
     // bound: the primal bound before any feasible solution is found comes back
@@ -266,6 +320,15 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
     }
     handoff.fixed_vars = fixed_vars;
 
+    // A numerically-troubled solve's dual bound and dual-reduction fixings may
+    // be invalid, so drop them: a wrong fixing could steer PRINTEMPS away from a
+    // real optimum (or even feasibility). The incumbent is independently
+    // verified below and survives — it is an actual assignment, not a bound.
+    if numerical_warning.is_some() {
+        handoff.fixed_vars.clear();
+        handoff.dual_bound = None;
+    }
+
     // Independently verify SCIP's incumbent against the original OPB with exact
     // integer arithmetic. SCIP solves in f64 and can return an infeasible
     // incumbent once coefficients exceed 2^53 (the f64 exact-integer limit). On
@@ -308,6 +371,7 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
             let mut run = ScipRun::unknown();
             run.elapsed_sec = started.elapsed().as_secs_f64();
             run.interrupted = cfg.interrupt_flag.is_set();
+            run.numerical_warning = numerical_warning;
             let _ = run.handoff.write_bounds_json(
                 cfg.bounds_path,
                 "DISCARDED_VERIFICATION",
@@ -318,7 +382,10 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
         }
     }
 
-    let verdict = classify_verdict(status, cfg.has_objective, handoff.incumbent.is_some());
+    let mut verdict = classify_verdict(status, cfg.has_objective, handoff.incumbent.is_some());
+    if numerical_warning.is_some() {
+        verdict = demote_for_numerical_trouble(verdict);
+    }
 
     // Persistence.
     let _ = handoff.write_printemps_initial_solution(cfg.incumbent_sol_path);
@@ -362,6 +429,7 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
         last_s_line,
         last_v_line,
         last_o_value,
+        numerical_warning,
     })
 }
 
@@ -408,6 +476,86 @@ fn finite_bound(value: f64, infinity: f64) -> Option<f64> {
         Some(value)
     } else {
         None
+    }
+}
+
+/// Tee SCIP's own message output into `path` so the caller can scan it for
+/// numerical-reliability warnings after the solve.
+///
+/// SCIP's message handler copies whatever it actually emits — warnings *and*
+/// info-channel output — into a log file when one is set, while
+/// `SCIPsetMessagehdlrQuiet` only suppresses the console (stderr/stdout) copy. So
+/// a logfile + quiet pair captures everything to disk with no console noise.
+/// Crucially, the messages must first be *generated*: warnings are ungated, but
+/// the "numerical troubles" lines are info-channel messages gated by
+/// `display/verblevel`, so the caller raises verbosity to FULL before solving
+/// (see the `Model::new().set_display_verbosity(5)` call in [`run`]); otherwise
+/// they would be filtered out at the source and never reach this logfile. The
+/// handler opens the file in append mode, so any stale file (from a reused
+/// save-dir) is removed first to avoid detecting a previous run's warnings.
+/// Best-effort: on any failure the guard is simply absent and the solve proceeds
+/// as before.
+fn install_message_logfile<T>(model: &Model<T>, path: &Path, log: &mut File) {
+    let _ = std::fs::remove_file(path);
+    let Some(s) = path.to_str() else {
+        log_line(
+            log,
+            "could not install SCIP message logfile: non-UTF-8 path",
+        );
+        return;
+    };
+    let Ok(c) = CString::new(s) else {
+        log_line(
+            log,
+            "could not install SCIP message logfile: path has interior NUL",
+        );
+        return;
+    };
+    // SAFETY: `model` owns a live SCIP instance for the duration of this call,
+    // and `c` outlives the FFI calls that borrow its pointer.
+    unsafe {
+        ffi::SCIPsetMessagehdlrLogfile(model.scip_ptr(), c.as_ptr());
+        ffi::SCIPsetMessagehdlrQuiet(model.scip_ptr(), 1);
+    }
+    log_line(log, &format!("SCIP message logfile installed: {s}"));
+}
+
+/// Scan the captured SCIP message log for the warnings that indicate the solve
+/// may have produced an unreliable verdict, returning a human-readable summary
+/// of which were present. Mirrors the substrings watched by the SCIP-NaPS
+/// reference driver. The log must already be flushed (close it via
+/// `SCIPsetMessagehdlrLogfile(_, NULL)` before calling).
+fn detect_numerical_trouble(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let lower = String::from_utf8_lossy(&bytes).to_lowercase();
+    let mut hits = Vec::new();
+    if lower.contains("numerical troubles") {
+        hits.push("numerical troubles");
+    }
+    if lower.contains("out of range") {
+        hits.push("out of range");
+    }
+    if hits.is_empty() {
+        None
+    } else {
+        Some(hits.join(", "))
+    }
+}
+
+/// Drop the claims a numerically-troubled SCIP solve cannot support.
+///
+/// Such a solve may have a corrupted dual bound, so its optimality and
+/// infeasibility proofs are untrustworthy. `OptimumFound` is demoted to
+/// `Satisfiable` (the incumbent is still independently verified feasible, so it
+/// is kept as a warm start / fallback) and `Unsatisfiable` to `Unknown` (no
+/// incumbent exists; let PRINTEMPS solve the instance). A plain `Satisfiable`
+/// verdict is preserved: it asserts only feasibility, which the exact verifier
+/// has already confirmed.
+fn demote_for_numerical_trouble(verdict: ScipVerdict) -> ScipVerdict {
+    match verdict {
+        ScipVerdict::OptimumFound => ScipVerdict::Satisfiable,
+        ScipVerdict::Unsatisfiable => ScipVerdict::Unknown,
+        other => other,
     }
 }
 
@@ -555,6 +703,70 @@ mod tests {
         assert_eq!(
             classify_verdict(Status::TimeLimit, false, false),
             ScipVerdict::Unknown
+        );
+    }
+
+    #[test]
+    fn demote_drops_optimum_and_unsat_claims() {
+        // A numerically-troubled solve must not assert optimality or
+        // infeasibility: those proofs lean on a dual bound that may be corrupt.
+        assert_eq!(
+            demote_for_numerical_trouble(ScipVerdict::OptimumFound),
+            ScipVerdict::Satisfiable
+        );
+        assert_eq!(
+            demote_for_numerical_trouble(ScipVerdict::Unsatisfiable),
+            ScipVerdict::Unknown
+        );
+        // Feasibility (Satisfiable) is backed by the exact verifier, so it
+        // survives; Unknown stays Unknown.
+        assert_eq!(
+            demote_for_numerical_trouble(ScipVerdict::Satisfiable),
+            ScipVerdict::Satisfiable
+        );
+        assert_eq!(
+            demote_for_numerical_trouble(ScipVerdict::Unknown),
+            ScipVerdict::Unknown
+        );
+    }
+
+    #[test]
+    fn detect_numerical_trouble_matches_known_warnings() {
+        use std::io::Write;
+
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        writeln!(f, "some line\nLP solver: NUMERICAL TROUBLES detected\nmore").unwrap();
+        let hit = detect_numerical_trouble(f.path()).unwrap();
+        assert!(hit.contains("numerical troubles"));
+
+        let mut g = tempfile::NamedTempFile::new().unwrap();
+        writeln!(g, "WARNING: coefficient out of range, rounding").unwrap();
+        assert_eq!(
+            detect_numerical_trouble(g.path()).unwrap(),
+            "out of range".to_string()
+        );
+
+        let mut both = tempfile::NamedTempFile::new().unwrap();
+        writeln!(both, "out of range ... numerical troubles ...").unwrap();
+        assert_eq!(
+            detect_numerical_trouble(both.path()).unwrap(),
+            "numerical troubles, out of range".to_string()
+        );
+    }
+
+    #[test]
+    fn detect_numerical_trouble_clean_log_is_none() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        writeln!(f, "presolving done\nSCIP Status: optimal solution found").unwrap();
+        assert_eq!(detect_numerical_trouble(f.path()), None);
+    }
+
+    #[test]
+    fn detect_numerical_trouble_missing_file_is_none() {
+        assert_eq!(
+            detect_numerical_trouble(Path::new("/nonexistent/scip_messages.log")),
+            None
         );
     }
 }
