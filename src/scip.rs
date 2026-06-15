@@ -17,7 +17,7 @@
 
 use crate::handoff::{SolverHandoff, VarAssignment};
 use crate::signals::InterruptFlag;
-use crate::verify::{self, VerifyOutcome};
+use crate::verify::{self, ObjectiveOutcome, VerifyOutcome};
 use russcip::ffi;
 use russcip::prelude::*;
 use std::collections::HashMap;
@@ -252,7 +252,7 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
     unsafe {
         ffi::SCIPsetMessagehdlrLogfile(solved.scip_ptr(), std::ptr::null());
     }
-    let numerical_warning = detect_numerical_trouble(&messages_path);
+    let mut numerical_warning = detect_numerical_trouble(&messages_path);
     if let Some(w) = &numerical_warning {
         log_line(
             &mut log_file,
@@ -329,6 +329,20 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
         handoff.dual_bound = None;
     }
 
+    // Build the index→bool assignment once; the feasibility check and the
+    // objective recomputation below both reuse it. The map is owned, so it does
+    // not keep `handoff` borrowed.
+    let assignment: Option<HashMap<u32, bool>> = handoff.incumbent.as_ref().map(|inc| {
+        inc.iter()
+            .filter_map(|a| {
+                a.name
+                    .strip_prefix('x')
+                    .and_then(|d| d.parse::<u32>().ok())
+                    .map(|idx| (idx, a.value == 1))
+            })
+            .collect()
+    });
+
     // Independently verify SCIP's incumbent against the original OPB with exact
     // integer arithmetic. SCIP solves in f64 and can return an infeasible
     // incumbent once coefficients exceed 2^53 (the f64 exact-integer limit). On
@@ -337,17 +351,8 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
     // from the same lossy model and cannot be trusted. The driver then falls
     // through to PRINTEMPS, and removing the persisted artifacts guarantees no
     // bad warm-start is left behind from this (or an earlier) run.
-    if let Some(inc) = &handoff.incumbent {
-        let assignment: HashMap<u32, bool> = inc
-            .iter()
-            .filter_map(|a| {
-                a.name
-                    .strip_prefix('x')
-                    .and_then(|d| d.parse::<u32>().ok())
-                    .map(|idx| (idx, a.value == 1))
-            })
-            .collect();
-        let reject = match verify::verify_assignment(cfg.instance, &assignment) {
+    if let Some(assignment) = &assignment {
+        let reject = match verify::verify_assignment(cfg.instance, assignment) {
             Ok(VerifyOutcome::Satisfied) => None,
             Ok(VerifyOutcome::Violated { line, detail }) => Some(format!(
                 "SCIP incumbent violates constraint ending on line {line}: {detail}"
@@ -382,6 +387,70 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
         }
     }
 
+    // Independently recompute the objective of the (now feasibility-verified)
+    // incumbent with exact i128 arithmetic and compare it to the value SCIP
+    // reported. SCIP optimizes in f64, so on large-coefficient instances its
+    // objective can disagree with the true integer value — and a corrupted
+    // objective means SCIP may have pruned the real optimum, so its OPTIMUM
+    // claim cannot be trusted. Unlike a constraint violation, the incumbent is
+    // still a genuine feasible solution, so we do NOT discard it: we treat the
+    // mismatch exactly like a SCIP numerical-reliability warning (demote
+    // OPTIMUM→SATISFIABLE, drop dual-derived info) and keep the verified
+    // incumbent as a warm start, reporting the exact recomputed objective. If
+    // the objective cannot be recomputed exactly, demote conservatively too.
+    let mut authoritative_obj: Option<i128> = None;
+    if cfg.has_objective {
+        if let (Some(assignment), Some(scip_primal)) = (&assignment, primal_bound) {
+            let scip_obj = scip_primal.round() as i128;
+            match verify::evaluate_objective(cfg.instance, assignment) {
+                Ok(ObjectiveOutcome::Value(y)) => {
+                    authoritative_obj = Some(y);
+                    if y != scip_obj {
+                        let msg = format!(
+                            "SCIP claimed objective {scip_obj} but exact recomputation gives {y}"
+                        );
+                        log_line(
+                            &mut log_file,
+                            &format!(
+                                "OBJECTIVE MISMATCH: {msg}; demoting verdict and reporting the exact value"
+                            ),
+                        );
+                        record_numerical_warning(&mut numerical_warning, msg);
+                    }
+                }
+                Ok(ObjectiveOutcome::NoObjective) => {}
+                Ok(ObjectiveOutcome::Unverifiable { reason }) => {
+                    let msg = format!("SCIP objective could not be verified exactly: {reason}");
+                    log_line(
+                        &mut log_file,
+                        &format!("OBJECTIVE UNVERIFIABLE: {msg}; demoting verdict conservatively"),
+                    );
+                    record_numerical_warning(&mut numerical_warning, msg);
+                }
+                Err(e) => {
+                    let msg = format!("could not read instance to verify SCIP objective: {e}");
+                    log_line(
+                        &mut log_file,
+                        &format!("OBJECTIVE UNVERIFIABLE: {msg}; demoting verdict conservatively"),
+                    );
+                    record_numerical_warning(&mut numerical_warning, msg);
+                }
+            }
+        }
+    }
+
+    // A detected objective problem is, like a SCIP numerical warning, a reason
+    // to distrust dual-derived info; drop it (idempotent if already dropped
+    // when SCIP itself warned about numerics).
+    if numerical_warning.is_some() {
+        handoff.fixed_vars.clear();
+        handoff.dual_bound = None;
+    }
+    // Prefer the exact recomputed objective for the reported bound.
+    if let Some(y) = authoritative_obj {
+        handoff.primal_bound = Some(y as f64);
+    }
+
     let mut verdict = classify_verdict(status, cfg.has_objective, handoff.incumbent.is_some());
     if numerical_warning.is_some() {
         verdict = demote_for_numerical_trouble(verdict);
@@ -399,7 +468,11 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
     // as an `f64` that can carry floating-point error (e.g. -81.00000000000001),
     // so round to the nearest integer before formatting the `o …` line.
     let last_o_value = if cfg.has_objective {
-        primal_bound.map(|v| format!("{}", v.round() as i64))
+        match authoritative_obj {
+            // The exact i128 recomputation is authoritative over SCIP's f64.
+            Some(y) => Some(format!("{y}")),
+            None => primal_bound.map(|v| format!("{}", v.round() as i64)),
+        }
     } else {
         None
     };
@@ -551,6 +624,19 @@ fn detect_numerical_trouble(path: &Path) -> Option<String> {
 /// incumbent exists; let PRINTEMPS solve the instance). A plain `Satisfiable`
 /// verdict is preserved: it asserts only feasibility, which the exact verifier
 /// has already confirmed.
+/// Fold an additional numerical-reliability message into `slot`, preserving any
+/// warning SCIP already reported (the driver surfaces the combined text as a
+/// single `c …` comment).
+fn record_numerical_warning(slot: &mut Option<String>, msg: String) {
+    match slot {
+        Some(existing) => {
+            existing.push_str("; ");
+            existing.push_str(&msg);
+        }
+        None => *slot = Some(msg),
+    }
+}
+
 fn demote_for_numerical_trouble(verdict: ScipVerdict) -> ScipVerdict {
     match verdict {
         ScipVerdict::OptimumFound => ScipVerdict::Satisfiable,
