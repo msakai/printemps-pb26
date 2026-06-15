@@ -624,6 +624,14 @@ fn detect_numerical_trouble(path: &Path) -> Option<String> {
 /// incumbent exists; let PRINTEMPS solve the instance). A plain `Satisfiable`
 /// verdict is preserved: it asserts only feasibility, which the exact verifier
 /// has already confirmed.
+fn demote_for_numerical_trouble(verdict: ScipVerdict) -> ScipVerdict {
+    match verdict {
+        ScipVerdict::OptimumFound => ScipVerdict::Satisfiable,
+        ScipVerdict::Unsatisfiable => ScipVerdict::Unknown,
+        other => other,
+    }
+}
+
 /// Fold an additional numerical-reliability message into `slot`, preserving any
 /// warning SCIP already reported (the driver surfaces the combined text as a
 /// single `c …` comment).
@@ -634,14 +642,6 @@ fn record_numerical_warning(slot: &mut Option<String>, msg: String) {
             existing.push_str(&msg);
         }
         None => *slot = Some(msg),
-    }
-}
-
-fn demote_for_numerical_trouble(verdict: ScipVerdict) -> ScipVerdict {
-    match verdict {
-        ScipVerdict::OptimumFound => ScipVerdict::Satisfiable,
-        ScipVerdict::Unsatisfiable => ScipVerdict::Unknown,
-        other => other,
     }
 }
 
