@@ -112,9 +112,10 @@ Three complementary guards protect against these failure modes.
   silent by the message handler's quiet flag instead.)
 
 - **`intsize` skip (`--scip-max-intsize N`, default `53`).** PB-competition OPB
-  files carry an `intsize=` field in their header comment (the bit length of
-  the largest coefficient). When it exceeds `N`, the SCIP phase is skipped
-  entirely and the instance is handed straight to PRINTEMPS
+  files carry an `intsize=` field in their header comment (the bit length needed
+  to represent, for each constraint and objective function, the sum of the absolute
+  values of all coefficients plus the degree). When it exceeds `N`, the SCIP phase
+  is skipped entirely and the instance is handed straight to PRINTEMPS
   (`c scip-printemps: skipping SCIP (intsize=… > …)`). The default `53` matches
   the f64 exact-integer limit. This additionally guards failures that
   verification *cannot* catch — a wrongly reported `UNSATISFIABLE` or a wrong
