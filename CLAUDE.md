@@ -26,7 +26,7 @@ There is no `cargo test` suite; verification is the smoke tests in CI plus runni
 
 Both drivers follow the same two-phase shape; the differences are concentrated in phase 1.
 
-1. **Parse CLI + scan the OPB instance.** `src/opb.rs` does a cheap scan to detect whether the instance has an objective (`min:` line); this drives `s OPTIMUM FOUND` vs `s SATISFIABLE` semantics later.
+1. **Parse CLI + scan the OPB instance.** `src/opb.rs` does a cheap scan to detect whether the instance has an objective (`min:` line); this drives `s OPTIMUM FOUND` vs `s SATISFIABLE` semantics later. The restricted OPB input format the scan relies on (variable naming, header hints, `min:`-only objective, etc.) is specified in [misc/OPBcompetition.md](misc/OPBcompetition.md).
 2. **Install signal forwarder** (`src/signals.rs`). A dedicated thread listens for `SIGINT`/`SIGTERM`/`SIGXCPU`, sets an `InterruptFlag`, and forwards the signal to the currently registered child PID (`ChildSlot`). Children are placed in their own process group so terminal Ctrl-C does not double-deliver. **Mid-SCIP interruption is a known gap** — `russcip::solve()` consumes the model so we can't call `SCIPinterruptSolve` from another thread; signals during phase 1 of `scip-printemps` are only observed after SCIP finishes naturally.
 3. **Phase 1: Exact (subprocess) or SCIP (in-process).**
    - `src/exact.rs` spawns Exact, tees its stdout (passing PB-format lines through, buffering the trailing `s …`/`v …`), and parses `c fixed <signed-int>` lines when `--use-fixed-literals` is set.
@@ -52,6 +52,8 @@ These directories are gitignored only implicitly (they are committed only if you
 ## Output protocol
 
 stdout must speak PB competition format: `c …` (comment), `o …` (objective), `v …` (variable assignment), `s …` (status). Anything the drivers emit that isn't the final answer is prefixed with `c`. The drivers themselves never print raw `s`/`v` lines from phase 1 directly — those are always buffered and either promoted to the final answer or downgraded to a `c …` comment, to guarantee at most one final `s`/`v` block.
+
+The authoritative reference for the competition's file formats (restricted OPB for PBS/PBO, WBO) and solver requirements is [misc/OPBcompetition.md](misc/OPBcompetition.md) (rendered from the official [OPBcompetition.pdf](https://www.cril.univ-artois.fr/PB24/OPBcompetition.pdf), "Restricted OPB Format in Use in the PB Competitions"). Consult it when touching parsing, the integer-size handling, or output behavior — notably the `intsize=` header hint and the requirement to print `s UNSUPPORTED` at parse time when the solver cannot handle an instance's integer sizes.
 
 ## Conventions worth knowing
 
