@@ -1,4 +1,4 @@
-## Restricted OPB Format in Use in the PB Competitions
+# Restricted OPB Format in Use in the PB Competitions
 
 Olivier ROUSSEL
 
@@ -179,7 +179,7 @@ As a hint to perform memory allocation, the first line of a linear instance will
 3. `#equal=` followed by a space and the number of 'strictly equal' constraints in the file,
 4. `intsize=` followed by a space and the number of bits required to represent, for any constraint of the formula, the sum of the absolute value of all integers that appear in the constraint. Formally, let Cᵢ be a constraint ∑ⱼ cᵢⱼ·xⱼ ≥ d (where ≥ may be replaced by = ). If there is an objective function, it is seen as a pseudo constraint with a null degree ( d = 0 ). The value size that appears after `intsize=` is given by size = maxᵢ(1 + ⌊log₂(|d| + ∑ⱼ |cᵢⱼ|)⌋) . A solver which uses integers of at least size bits (plus one for signed integers) and that simply checks the satisfaction of constraints by summing the coefficient of all true literals and subtracting the degree of the constraint will never face integer overflow. Solvers that perform more clever computations (such as PB constraints learning) should be more careful.
 
-## Examples
+### Examples
 
 ```
 * #variable= 5 #constraint= 4 #equal= 1 intsize= 61
@@ -243,7 +243,7 @@ These two informations allow the parsers to compute the total number of linear c
 
 - Variables that appear inside a product are guaranteed to be ordered from the lowest to the greatest index. High quality provers are encouraged to avoid relying on this assumption as it may not hold outside the competition environment.
 
-Examples The first example only illustrates the syntax (it does not encode any concrete problem).
+**Examples** The first example only illustrates the syntax (it does not encode any concrete problem).
 
 ```
 * #variable= 5 #constraint= 4 #equal= 1 intsize= 64 #product= 5 sizeproduct= 13
@@ -353,10 +353,10 @@ A WBO instance can be transformed into a PBO instance by introducing extra varia
 
 In the PB competition, it is guaranteed that the first line of the file will be a comment that will start with the usual information given for a linear, or non-linear file. This line will then contain the following key-value pairs (separated by a space):
 
-- #soft= followed by a space and the number of soft constraints in the file,
-- mincost= followed by a space and the smallest cost of a soft constraint,
-- maxcost= followed by a space and the greatest cost used in the file,
-- sumcost= followed by a space and the sum of the soft constraints costs.
+- `#soft=` followed by a space and the number of soft constraints in the file,
+- `mincost=` followed by a space and the smallest cost of a soft constraint,
+- `maxcost=` followed by a space and the greatest cost used in the file,
+- `sumcost=` followed by a space and the sum of the soft constraints costs.
 
 The value of sumcost= is used in place of the sum of the objective function coefficients to compute the value of intsize= .
 
@@ -374,9 +374,9 @@ A WBO instance with non-linear constraints could start with the following line:
 
 In the PB competition, it is also guaranteed that the costs used in the file will be as small as possible (but still may be of arbitrary size if this is needed to encode the problem). This implies that at least one cost will be 1, and if all costs are equal, their value will be 1.
 
-## 4.2.1 Examples
+### 4.2.1 Examples
 
-Example 1 The optimal solution of the instance below is x 1 = 0 and has a cost of 2.
+**Example 1** The optimal solution of the instance below is x 1 = 0 and has a cost of 2.
 
 ```
 soft: 6 ;
@@ -384,7 +384,7 @@ soft: 6 ;
 [3] -1 x1 >= 0 ;
 ```
 
-Example 2 The optimal solution of the instance below is x 1 = 0 , x 2 = 1 and has a cost of 2.
+**Example 2** The optimal solution of the instance below is x 1 = 0 , x 2 = 1 and has a cost of 2.
 
 ```
 soft: 6 ;
@@ -393,7 +393,7 @@ soft: 6 ;
 -1 x1 -1 x2 >= -1 ;
 ```
 
-Example 3 The instance below has no solution at all (the minimal cost is 6 which is not admissible).
+**Example 3** The instance below has no solution at all (the minimal cost is 6 which is not admissible).
 
 ```
 soft: 6 ;
