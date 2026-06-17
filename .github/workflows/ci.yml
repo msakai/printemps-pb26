@@ -73,6 +73,16 @@ jobs:
       - name: Smoke Test (exact-printemps)
         run: bin/exact-printemps -t 60 --exact-time 30 --seed 12345 --use-fixed-literals Exact/test/instances/opb/opt/air03.opb
 
+      - name: Smoke Test (exact-printemps, WBO)
+        # WBO instance: optimal x1=0 has cost 2 (misc/OPBcompetition.md §4.2.1).
+        # Confirms Exact reads the .wbo and the driver reports it as an
+        # optimization result (not a bare SATISFIABLE).
+        run: |
+          out=$(bin/exact-printemps -t 60 --exact-time 30 --seed 12345 Exact/test/instances/wbo/example1.wbo)
+          echo "$out"
+          echo "$out" | grep -qE '^s OPTIMUM FOUND$'
+          echo "$out" | grep -qE '^o 2$'
+
       - name: Smoke Test (scip-printemps)
         run: bin/scip-printemps -t 60 --scip-time 30 --seed 12345 --use-fixed-literals Exact/test/instances/opb/opt/air03.opb
 
