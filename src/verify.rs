@@ -168,10 +168,17 @@ pub fn evaluate_objective(
                 seen_soft_header = true;
                 ControlFlow::Continue(())
             }
-            // OPB objective: evaluate the line and stop (WBO has no `min:`/`max:`).
+            // OPB objective: evaluate the line and stop. A WBO file has no
+            // `min:`/`max:` line; if one appears after a `soft:` header (a
+            // non-conforming file), ignore it — the WBO objective is the
+            // violated-soft-cost sum, not the stray objective line.
             Ok(WboStmt::Objective) => {
-                result = Some(eval_objective(tokens, assignment, line));
-                ControlFlow::Break(())
+                if seen_soft_header {
+                    ControlFlow::Continue(())
+                } else {
+                    result = Some(eval_objective(tokens, assignment, line));
+                    ControlFlow::Break(())
+                }
             }
             // Hard constraints do not contribute to the WBO objective.
             Ok(WboStmt::Hard) => ControlFlow::Continue(()),
@@ -319,10 +326,15 @@ fn for_each_statement<T>(
                 if !stripped.is_empty() {
                     pending.push(stripped.to_string());
                 }
-                if let ControlFlow::Break(v) = f(&pending, stmt_line) {
-                    return Ok(Some(v));
+                // A `;` with no accumulated tokens (a stray/empty statement,
+                // e.g. a lone `;`) is a no-op — skip it rather than handing an
+                // empty token slice to `f`.
+                if !pending.is_empty() {
+                    if let ControlFlow::Break(v) = f(&pending, stmt_line) {
+                        return Ok(Some(v));
+                    }
+                    pending.clear();
                 }
-                pending.clear();
             } else {
                 pending.push(tok.to_string());
             }
@@ -362,6 +374,8 @@ fn classify_wbo_statement(
     let Some(first) = tokens.first() else {
         return Ok(WboStmt::Hard);
     };
+    // This `soft:` detection must agree with `opb::scan`'s `is_wbo` (which gates
+    // the optimization/verdict handling in `scip.rs`); keep the two in sync.
     if first.starts_with("soft:") || first == "soft" {
         return match parse_soft_header(tokens) {
             Some(top) => Ok(WboStmt::SoftHeader(top)),
@@ -754,6 +768,17 @@ mod tests {
     }
 
     #[test]
+    fn stray_empty_statement_is_a_noop() {
+        // A lone `;` (empty statement) must be skipped, not treated as a
+        // malformed constraint that would make the whole check Unverifiable.
+        let f = make_tmp("+1 x1 >= 1 ;\n;\n");
+        assert_eq!(
+            verify_assignment(f.path(), &assign(&[(1, true)])).unwrap(),
+            VerifyOutcome::Satisfied
+        );
+    }
+
+    #[test]
     fn objective_basic_sum() {
         let f = make_tmp("min: +5 x1 +3 x2 ;\n+1 x1 >= 1 ;\n");
         // 5*1 + 3*0 = 5
@@ -1041,6 +1066,18 @@ mod tests {
             evaluate_objective(f.path(), &assign(&[(1, true)])).unwrap(),
             ObjectiveOutcome::Unverifiable { .. }
         ));
+    }
+
+    #[test]
+    fn wbo_objective_ignores_stray_min_line() {
+        // A `min:` line after the `soft:` header (a non-conforming WBO file)
+        // must not override the soft-cost objective.
+        let f = make_tmp("soft: 10 ;\n[2] +1 x1 >= 1 ;\nmin: +5 x2 ;\n");
+        // x1=0 -> only the soft constraint is violated -> cost 2 (not 5).
+        assert_eq!(
+            evaluate_objective(f.path(), &assign(&[(1, false), (2, true)])).unwrap(),
+            ObjectiveOutcome::Value(2)
+        );
     }
 
     #[test]

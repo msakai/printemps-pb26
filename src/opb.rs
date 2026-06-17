@@ -39,7 +39,8 @@ pub fn scan<P: AsRef<Path>>(path: P) -> io::Result<OpbInfo> {
         }
         // A WBO instance's first non-comment line is the `soft:` header; it has
         // no `min:` objective (the objective is the violated-soft-cost sum,
-        // recomputed in `verify::evaluate_objective`).
+        // recomputed in `verify::evaluate_objective`). Keep this WBO detection
+        // in sync with the token-based check in `verify::classify_wbo_statement`.
         if trimmed.starts_with("soft:") || trimmed.starts_with("soft ") {
             is_wbo = true;
             break;
