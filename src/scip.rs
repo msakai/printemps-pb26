@@ -86,6 +86,11 @@ pub struct ScipConfig<'a> {
     /// reports `Status::Optimal` on the first feasible solution, so without
     /// this flag the verdict would be misreported as `OptimumFound`.
     pub has_objective: bool,
+    /// Whether the instance is WBO. A WBO instance has no `min:` line (so
+    /// `has_objective` is `false`) yet is an optimization problem: SCIP's `.wbo`
+    /// reader minimizes the sum of violated soft-constraint weights. The two are
+    /// combined into "is this an optimization instance?" inside [`run`].
+    pub is_wbo: bool,
     pub timeout_sec: f64,
     pub seed: Option<i64>,
     pub threads: Option<i32>,
@@ -118,6 +123,12 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
         &mut log_file,
         &format!("timeout_sec={:.3}", cfg.timeout_sec),
     );
+
+    // Both PBO (`min:` objective) and WBO (minimize violated soft-constraint
+    // cost) are optimization instances; only pure-satisfaction (PBS) instances
+    // are not. This drives the objective recomputation, the verdict
+    // classification, and whether an `o …` line is emitted.
+    let is_optimization = cfg.has_objective || cfg.is_wbo;
 
     if cfg.interrupt_flag.is_set() {
         log_line(&mut log_file, "interrupt flag already set; skipping solve");
@@ -343,14 +354,18 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
             .collect()
     });
 
-    // Independently verify SCIP's incumbent against the original OPB with exact
-    // integer arithmetic. SCIP solves in f64 and can return an infeasible
+    // Independently verify SCIP's incumbent against the original instance with
+    // exact integer arithmetic. SCIP solves in f64 and can return an infeasible
     // incumbent once coefficients exceed 2^53 (the f64 exact-integer limit). On
     // any violation — or if the check cannot be completed exactly — discard the
     // entire SCIP result: its bounds, verdict, and dual reductions all derive
     // from the same lossy model and cannot be trusted. The driver then falls
     // through to PRINTEMPS, and removing the persisted artifacts guarantees no
     // bad warm-start is left behind from this (or an earlier) run.
+    //
+    // `verify_assignment` is format-aware: for a WBO instance a `Violated`
+    // outcome can also mean the incumbent's total violated-soft cost reached the
+    // top cost `T` (inadmissible), which is likewise a reason to discard it.
     if let Some(assignment) = &assignment {
         let reject = match verify::verify_assignment(cfg.instance, assignment) {
             Ok(VerifyOutcome::Satisfied) => None,
@@ -392,14 +407,16 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
     // reported. SCIP optimizes in f64, so on large-coefficient instances its
     // objective can disagree with the true integer value — and a corrupted
     // objective means SCIP may have pruned the real optimum, so its OPTIMUM
-    // claim cannot be trusted. Unlike a constraint violation, the incumbent is
-    // still a genuine feasible solution, so we do NOT discard it: we treat the
+    // claim cannot be trusted. For WBO the recomputed value is the sum of
+    // violated soft-constraint weights, which is exactly what SCIP minimizes, so
+    // the same comparison applies. Unlike a constraint violation, the incumbent
+    // is still a genuine feasible solution, so we do NOT discard it: we treat the
     // mismatch exactly like a SCIP numerical-reliability warning (demote
     // OPTIMUM→SATISFIABLE, drop dual-derived info) and keep the verified
     // incumbent as a warm start, reporting the exact recomputed objective. If
     // the objective cannot be recomputed exactly, demote conservatively too.
     let mut authoritative_obj: Option<i128> = None;
-    if cfg.has_objective {
+    if is_optimization {
         if let (Some(assignment), Some(scip_primal)) = (&assignment, primal_bound) {
             let scip_obj = scip_primal.round() as i128;
             match verify::evaluate_objective(cfg.instance, assignment) {
@@ -451,7 +468,7 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
         handoff.primal_bound = Some(y as f64);
     }
 
-    let mut verdict = classify_verdict(status, cfg.has_objective, handoff.incumbent.is_some());
+    let mut verdict = classify_verdict(status, is_optimization, handoff.incumbent.is_some());
     if numerical_warning.is_some() {
         verdict = demote_for_numerical_trouble(verdict);
     }
@@ -462,12 +479,12 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
     let _ = handoff.write_bounds_json(cfg.bounds_path, verdict_label(verdict), elapsed_sec, None);
 
     let last_v_line = handoff.to_pb_v_line();
-    // Only report an objective value for optimization instances; a PBS
+    // Only report an objective value for optimization instances (PBO/WBO); a PBS
     // instance has no objective (its primal bound is the constant 0).
     // PB objectives are integral by construction, but SCIP returns the bound
     // as an `f64` that can carry floating-point error (e.g. -81.00000000000001),
     // so round to the nearest integer before formatting the `o …` line.
-    let last_o_value = if cfg.has_objective {
+    let last_o_value = if is_optimization {
         match authoritative_obj {
             // The exact i128 recomputation is authoritative over SCIP's f64.
             Some(y) => Some(format!("{y}")),
@@ -659,12 +676,13 @@ fn looks_like_pb_var(name: &str) -> bool {
 /// Map SCIP's terminal [`Status`] to a [`ScipVerdict`].
 ///
 /// The subtlety is `Status::Optimal`: on a pure satisfaction instance
-/// (`has_objective == false`) SCIP solves a constant zero objective, so
+/// (`is_optimization == false`) SCIP solves a constant zero objective, so
 /// "optimal" only certifies that a feasible solution exists. Such an instance
-/// must report `Satisfiable`, not `OptimumFound`.
-fn classify_verdict(status: Status, has_objective: bool, has_incumbent: bool) -> ScipVerdict {
+/// must report `Satisfiable`, not `OptimumFound`. PBO and WBO instances are both
+/// optimization instances and report `OptimumFound`.
+fn classify_verdict(status: Status, is_optimization: bool, has_incumbent: bool) -> ScipVerdict {
     match status {
-        Status::Optimal if has_objective => ScipVerdict::OptimumFound,
+        Status::Optimal if is_optimization => ScipVerdict::OptimumFound,
         Status::Optimal => ScipVerdict::Satisfiable,
         Status::Infeasible => ScipVerdict::Unsatisfiable,
         _ if has_incumbent => ScipVerdict::Satisfiable,

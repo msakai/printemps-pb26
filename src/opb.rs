@@ -5,6 +5,12 @@ use std::path::Path;
 #[derive(Debug, Clone, Copy)]
 pub struct OpbInfo {
     pub has_objective: bool,
+    /// Whether this is a WBO (Weighted Boolean Optimization) instance, detected
+    /// by a `soft:` header line. WBO instances have no explicit `min:` objective
+    /// (so `has_objective` stays `false`); their objective is the sum of the
+    /// weights of violated soft constraints. Callers that need "is this an
+    /// optimization instance?" should test `has_objective || is_wbo`.
+    pub is_wbo: bool,
     /// Value of the `intsize=` field in the PB-competition header comment
     /// (`* #variable= .. #constraint= .. intsize= N`), i.e. the bit length of
     /// the largest coefficient. `None` when no such header is present.
@@ -15,6 +21,7 @@ pub fn scan<P: AsRef<Path>>(path: P) -> io::Result<OpbInfo> {
     let f = File::open(path)?;
     let r = BufReader::new(f);
     let mut has_objective = false;
+    let mut is_wbo = false;
     let mut intsize = None;
     for line in r.lines() {
         let line = line?;
@@ -30,6 +37,13 @@ pub fn scan<P: AsRef<Path>>(path: P) -> io::Result<OpbInfo> {
             }
             continue;
         }
+        // A WBO instance's first non-comment line is the `soft:` header; it has
+        // no `min:` objective (the objective is the violated-soft-cost sum,
+        // recomputed in `verify::evaluate_objective`).
+        if trimmed.starts_with("soft:") || trimmed.starts_with("soft ") {
+            is_wbo = true;
+            break;
+        }
         if trimmed.starts_with("min:") || trimmed.starts_with("min ") {
             has_objective = true;
             break;
@@ -37,6 +51,7 @@ pub fn scan<P: AsRef<Path>>(path: P) -> io::Result<OpbInfo> {
     }
     Ok(OpbInfo {
         has_objective,
+        is_wbo,
         intsize,
     })
 }
@@ -154,5 +169,51 @@ mod tests {
             "* #variable= 50 #constraint= 0 #equal= 0 intsize= 22 #product= 14362\n+1 x1 >= 1;\n",
         );
         assert_eq!(scan(f.path()).unwrap().intsize, Some(22));
+    }
+
+    #[test]
+    fn scan_detects_wbo_soft_header() {
+        let f = make_tmp("* #variable= 1\nsoft: 6 ;\n[2] +1 x1 >= 1 ;\n");
+        let info = scan(f.path()).unwrap();
+        assert!(info.is_wbo);
+        // WBO has no `min:` objective; its objective is the soft-cost sum.
+        assert!(!info.has_objective);
+    }
+
+    #[test]
+    fn scan_detects_wbo_infinite_top() {
+        // `soft: ;` (top cost omitted) is still a WBO instance.
+        let f = make_tmp("soft: ;\n[1] +1 x1 >= 1 ;\n");
+        let info = scan(f.path()).unwrap();
+        assert!(info.is_wbo);
+        assert!(!info.has_objective);
+    }
+
+    #[test]
+    fn scan_opb_is_not_wbo() {
+        let f = make_tmp("+1 x1 >= 1;\n+1 x2 >= 0;\n");
+        let info = scan(f.path()).unwrap();
+        assert!(!info.is_wbo);
+        assert!(!info.has_objective);
+    }
+
+    #[test]
+    fn scan_min_is_not_wbo() {
+        let f = make_tmp("min: +1 x1;\n+1 x1 >= 1;\n");
+        let info = scan(f.path()).unwrap();
+        assert!(!info.is_wbo);
+        assert!(info.has_objective);
+    }
+
+    #[test]
+    fn scan_wbo_intsize_from_header() {
+        // The PB header (carrying intsize=, derived from sumcost= for WBO)
+        // precedes the `soft:` line, so intsize still parses.
+        let f = make_tmp(
+            "* #variable= 15 #constraint= 21 #equal= 0 intsize= 20 #soft= 5 mincost= 1 maxcost= 1 sumcost= 5\nsoft: 6 ;\n[1] +1 x1 >= 1 ;\n",
+        );
+        let info = scan(f.path()).unwrap();
+        assert!(info.is_wbo);
+        assert_eq!(info.intsize, Some(20));
     }
 }
