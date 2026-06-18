@@ -214,9 +214,10 @@ fn run() -> Result<(), String> {
     driver_log(
         args.verbose,
         &format!(
-            "instance={} has_objective={}",
+            "instance={} has_objective={} is_wbo={}",
             args.instance.display(),
-            opb_info.has_objective
+            opb_info.has_objective,
+            opb_info.is_wbo
         ),
     );
 
@@ -267,6 +268,7 @@ fn run() -> Result<(), String> {
         match scip::run(scip::ScipConfig {
             instance: &args.instance,
             has_objective: opb_info.has_objective,
+            is_wbo: opb_info.is_wbo,
             timeout_sec: scip_budget,
             seed: args.seed,
             threads: args.threads,
@@ -309,7 +311,10 @@ fn run() -> Result<(), String> {
     let is_final = match scip_run.verdict {
         scip::ScipVerdict::OptimumFound => true,
         scip::ScipVerdict::Unsatisfiable => true,
-        scip::ScipVerdict::Satisfiable => !opb_info.has_objective,
+        // A bare `Satisfiable` is final only for a pure-satisfaction (PBS)
+        // instance. For an optimization instance (PBO `min:` or WBO) it means
+        // SCIP did not prove optimality, so hand off to PRINTEMPS to improve it.
+        scip::ScipVerdict::Satisfiable => !(opb_info.has_objective || opb_info.is_wbo),
         scip::ScipVerdict::Unknown => false,
     };
 
