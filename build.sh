@@ -68,7 +68,7 @@ for f in "${LINKAGE_TARGETS[@]}"; do
   file "$f"
 done
 
-if [ "$BUILD_SCIP_PRINTEMPS" = "ON" ] && [ "$SCIP_PRINTEMPS_FEATURE" = "scip-from-source" ]; then
+if command -v ldd > /dev/null 2>&1 && [ "$BUILD_SCIP_PRINTEMPS" = "ON" ] && [ "$SCIP_PRINTEMPS_FEATURE" = "scip-from-source" ]; then
   echo "[pb] checking scip-printemps does not dynamically link SCIP/SoPlex"
   if ldd "$ROOT/bin/scip-printemps" | grep -E 'libscip|libsoplex'; then
     echo "ERROR: SCIP/SoPlex should be statically linked but appear in ldd output" >&2
