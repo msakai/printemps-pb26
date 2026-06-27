@@ -75,3 +75,11 @@ if command -v ldd > /dev/null 2>&1 && [ "$BUILD_SCIP_PRINTEMPS" = "ON" ] && [ "$
     exit 1
   fi
 fi
+
+if command -v objdump > /dev/null 2>&1 && [ "$BUILD_SCIP_PRINTEMPS" = "ON" ]; then
+  echo "[pb] checking glibc requirement of scip-printemps"
+  objdump -T "$ROOT/bin/scip-printemps" | grep GLIBC | grep -oP 'GLIBC_[\d.]+' | sort -V | tail -1
+  echo "[pb] checking libstdc++ requirement of scip-printemps"
+  objdump -T "$ROOT/bin/scip-printemps" | grep GLIBCXX | grep -oP 'GLIBCXX_[\d.]+' | sort -V | tail -1
+  objdump -T "$ROOT/bin/scip-printemps" | grep CXXABI | grep -oP 'CXXABI_[\d.]+' | sort -V | tail -1
+fi
