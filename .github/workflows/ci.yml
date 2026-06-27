@@ -8,7 +8,10 @@ on:
 jobs:
   build:
     name: build (linux x86_64)
-    runs-on: ubuntu-latest
+    # We use older version of Ubuntu to link with older version of glibc.
+    # The glibc version in Ubuntu 22.04 is 2.35, but the actually built scip-printemps
+    # binary only requires GLIBC_2.34.
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
