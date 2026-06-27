@@ -58,13 +58,13 @@ jobs:
             echo "scip-printemps links SCIP and SoPlex (Apache-2.0) statically;"
             echo "see https://www.scipopt.org/ for the upstream SCIP Optimization Suite."
           } > "$STAGE/BUILD_INFO.txt"
-          tar -czf "$STAGE.tar.gz" "$STAGE"
+          tar -cJf "$STAGE.tar.xz" "$STAGE"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: printemps_pb26
-          path: printemps_pb26.tar.gz
+          path: printemps_pb26.tar.xz
           if-no-files-found: error
 
       - name: Smoke Test (printemps)
