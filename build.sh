@@ -68,10 +68,18 @@ for f in "${LINKAGE_TARGETS[@]}"; do
   file "$f"
 done
 
-if [ "$BUILD_SCIP_PRINTEMPS" = "ON" ] && [ "$SCIP_PRINTEMPS_FEATURE" = "scip-from-source" ]; then
+if command -v ldd > /dev/null 2>&1 && [ "$BUILD_SCIP_PRINTEMPS" = "ON" ] && [ "$SCIP_PRINTEMPS_FEATURE" = "scip-from-source" ]; then
   echo "[pb] checking scip-printemps does not dynamically link SCIP/SoPlex"
   if ldd "$ROOT/bin/scip-printemps" | grep -E 'libscip|libsoplex'; then
     echo "ERROR: SCIP/SoPlex should be statically linked but appear in ldd output" >&2
     exit 1
   fi
+fi
+
+if command -v objdump > /dev/null 2>&1 && [ "$BUILD_SCIP_PRINTEMPS" = "ON" ]; then
+  echo "[pb] checking glibc requirement of scip-printemps"
+  objdump -T "$ROOT/bin/scip-printemps" | grep GLIBC | grep -oP 'GLIBC_[\d.]+' | sort -V | tail -1
+  echo "[pb] checking libstdc++ requirement of scip-printemps"
+  objdump -T "$ROOT/bin/scip-printemps" | grep GLIBCXX | grep -oP 'GLIBCXX_[\d.]+' | sort -V | tail -1
+  objdump -T "$ROOT/bin/scip-printemps" | grep CXXABI | grep -oP 'CXXABI_[\d.]+' | sort -V | tail -1
 fi
