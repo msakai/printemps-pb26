@@ -1,5 +1,8 @@
 # Restricted OPB Format in Use in the PB Competitions
 
+> [!NOTE]
+> This is an unofficial Markdown conversion of the official PDF [OPBcompetition.pdf](https://www.cril.univ-artois.fr/PB24/OPBcompetition.pdf), provided here for convenience. The original PDF is the authoritative reference; in case of any discrepancy, refer to it. This conversion is not endorsed by the PB Competition organizers.
+
 Olivier ROUSSEL
 
 roussel@cril.fr
