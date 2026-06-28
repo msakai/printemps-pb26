@@ -22,9 +22,10 @@ echo "[pb] building driver binaries"
 # scip-printemps is optional. Set BUILD_SCIP_PRINTEMPS=ON to also build it.
 # When the `scip-from-source` feature is used (default), SCIP itself is linked
 # statically into scip-printemps; common system libraries (glibc, libstdc++,
-# libgcc_s, libgomp) remain dynamically linked because rust's `+crt-static`
-# cannot cover SCIP's C++ runtime. exact-printemps therefore always has to be
-# built in a separate cargo invocation when STATIC=ON.
+# libgcc_s, libm) remain dynamically linked because rust's `+crt-static`
+# cannot cover SCIP's C++ runtime. (SCIP is built with TPI=none, so libgomp
+# is not pulled in.) exact-printemps therefore always has to be built in a
+# separate cargo invocation when STATIC=ON.
 BUILD_SCIP_PRINTEMPS="${BUILD_SCIP_PRINTEMPS:-OFF}"
 SCIP_PRINTEMPS_FEATURE="${SCIP_PRINTEMPS_FEATURE:-scip-from-source}"
 

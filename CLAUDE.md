@@ -16,11 +16,11 @@ Both driver binaries are produced from the same Rust crate (`pb-hybrid`) at the 
 
 - `git submodule update --init` is required before the first build.
 - `BUILD_SCIP_PRINTEMPS=ON ./build.sh` builds everything and stages the four binaries into `bin/`. Without that env var, `scip-printemps` is skipped (the Cargo `scip` feature is opt-in because `russcip`/`scip-sys` are heavy build deps).
-- `build.sh` defaults to `STATIC=ON`, which builds `exact-printemps` separately with `+crt-static` and `scip-printemps` with `--features scip-from-source` (statically links SCIP/SoPlex but keeps glibc/libstdc++/libgomp dynamic). It then `ldd`-asserts that `libscip`/`libsoplex` are not dynamic in `scip-printemps`.
+- `build.sh` defaults to `STATIC=ON`, which builds `exact-printemps` separately with `+crt-static` and `scip-printemps` with `--features scip-from-source` (statically links SCIP/SoPlex but keeps glibc and libstdc++ — along with libgcc_s/libm — dynamic; SCIP itself is built with `TPI=none` so `libgomp` is not pulled in). It then `ldd`-asserts that `libscip`/`libsoplex` are not dynamic in `scip-printemps`.
 - For Rust-only iteration, `cargo build --release --bin exact-printemps` does **not** require SCIP. `scip-printemps` requires one of `--features scip` (system SCIP via `SCIPOPTDIR`), `scip-bundled`, or `scip-from-source`.
 - CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy --release --bins --features scip-bundled -- -D warnings`, the full `build.sh`, and three smoke tests against `Exact/test/instances/opb/opt/air03.opb`. Run those locally before pushing — clippy is `-D warnings`.
 
-There is no `cargo test` suite; verification is the smoke tests in CI plus running solvers on real OPB instances.
+Per-module unit tests live alongside the source (`#[cfg(test)] mod tests` in `src/{opb,verify,handoff,signals,exact,printemps,scip}.rs`) and run in CI as `cargo test --release --features scip-bundled`. End-to-end verification is the smoke tests in CI plus running solvers on real OPB instances.
 
 ## Architecture: how a hybrid run flows
 
@@ -93,4 +93,4 @@ unzip -q -o /tmp/scipsrc.zip -d "$OUT"         # creates $OUT/scipoptsuite-9.2.4
 
 `cargo clean` wipes `OUT_DIR` (and may change its hash), so repeat after a clean.
 
-Running (not just building) the `scip-bundled` binary additionally requires `libgfortran.so.5` (`apt-get install -y libgfortran5`) and `LD_LIBRARY_PATH=$OUT/scip_install/lib` (the bundled `libscip.so` is linked without an rpath). The static `scip-from-source` build used by `build.sh` avoids both runtime issues. A full hybrid run also needs the phase-2 PRINTEMPS binary (`./bin/pb_competition_2025_solver`) produced by `build.sh`.
+Running (not just building) the `scip-bundled` binary additionally requires `libgfortran.so.5` and `libquadmath.so.0` (`apt-get install -y libgfortran5 libquadmath0` — on Ubuntu 24.04 the `libgfortran5` package does not pull `libquadmath0` automatically) and `LD_LIBRARY_PATH=$OUT/scip_install/lib` (the bundled `libscip.so` is linked without an rpath). The static `scip-from-source` build used by `build.sh` avoids both runtime issues. A full hybrid run also needs the phase-2 PRINTEMPS binary (`./bin/pb_competition_2025_solver`) produced by `build.sh`.

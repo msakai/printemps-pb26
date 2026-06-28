@@ -84,7 +84,7 @@ their installed shared libraries:
 - `exact-printemps` is fully statically linked via Rust's `+crt-static`.
 - `scip-printemps` links SCIP/SoPlex statically (via the `scip-from-source`
   Cargo feature, which builds SCIP from source with `-DSHARED=OFF`) but keeps
-  glibc/libstdc++/libgomp dynamic.
+  glibc and libstdc++ (along with libgcc_s/libm) dynamic.
 
 The build requires the corresponding development packages (e.g. `libc6-dev`,
 `libstdc++-*-dev`, `libgomp1` on Debian/Ubuntu, plus `libboost-dev` for the
