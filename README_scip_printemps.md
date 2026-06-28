@@ -208,7 +208,7 @@ To build `scip-printemps` you must pick how SCIP is provided:
   distributable binaries): downloads the scipoptsuite source and compiles
   SCIP with `-DSHARED=OFF`, producing a static `libscip.a`. The resulting
   `scip-printemps` only retains dynamic links to common system libraries
-  (glibc, libstdc++, libgomp). Slower to build the first time; the
+  (glibc, libstdc++, libgcc_s, libm). Slower to build the first time; the
   scip-sys build artifacts are cached by `Swatinem/rust-cache` in CI.
 
 ### Recommended path: `./build.sh`
@@ -221,8 +221,9 @@ To build `scip-printemps` you must pick how SCIP is provided:
 - `scip-printemps` is then built with `--features $SCIP_PRINTEMPS_FEATURE`
   (default `scip-from-source`), which compiles SCIP from source with
   `-DSHARED=OFF`. The resulting binary links SCIP/SoPlex statically and
-  keeps glibc/libstdc++/libgomp dynamic. `build.sh` asserts via `ldd` that
-  neither `libscip` nor `libsoplex` is a dynamic dependency.
+  keeps glibc and libstdc++ (along with libgcc_s/libm) dynamic. `build.sh`
+  asserts via `ldd` that neither `libscip` nor `libsoplex` is a dynamic
+  dependency.
 
 Override the SCIP mode by exporting `SCIP_PRINTEMPS_FEATURE=scip-bundled`
 or `SCIP_PRINTEMPS_FEATURE=scip` (the latter requires a system SCIP at

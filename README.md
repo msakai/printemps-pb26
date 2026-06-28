@@ -84,17 +84,48 @@ their installed shared libraries:
 - `exact-printemps` is fully statically linked via Rust's `+crt-static`.
 - `scip-printemps` links SCIP/SoPlex statically (via the `scip-from-source`
   Cargo feature, which builds SCIP from source with `-DSHARED=OFF`) but keeps
-  glibc/libstdc++/libgomp dynamic.
+  glibc and libstdc++ (along with libgcc_s/libm) dynamic.
 
-The build requires the corresponding development packages (e.g. `libc6-dev`,
-`libstdc++-*-dev`, `libgomp1` on Debian/Ubuntu, plus `libboost-dev` for the
-Exact solver). Run `STATIC=OFF ./build.sh` to use dynamic linking instead.
+Run `STATIC=OFF ./build.sh` to use dynamic linking instead.
 The script runs `file(1)` on each artifact at the end so you can confirm the
 linkage mode.
 
-See [README_scip_printemps.md](README_scip_printemps.md) for the supported
-SCIP build modes (`scip`, `scip-bundled`, `scip-from-source`) and the
-`scip-printemps`-specific build details.
+### Build requirements
+
+Common to all binaries (package names are Debian/Ubuntu examples; other
+distributions ship equivalent packages):
+
+- C and C++ compilers with their standard library headers (e.g. `gcc`, `g++`,
+  `libc6-dev`, `libstdc++-*-dev`).
+- CMake (>= 3.15) and Make.
+- A Rust toolchain (`cargo`).
+
+Per binary:
+
+- `pb_competition_2025_solver` — OpenMP runtime (e.g. `libgomp1`); PRINTEMPS
+  parallelizes with OpenMP.
+- `Exact` — Boost headers >= 1.71 (e.g. `libboost-dev`).
+- `scip-printemps` — see [README_scip_printemps.md](README_scip_printemps.md)
+  for the supported SCIP build modes (`scip`, `scip-bundled`,
+  `scip-from-source`) and their build-time prerequisites.
+
+On Debian/Ubuntu, `build-essential cmake libboost-dev` covers all of the
+above except the SCIP-specific prerequisites.
+
+### Runtime requirements for `scip-printemps` (`scip-bundled` only)
+
+When `scip-printemps` is built with `--features scip-bundled` (instead of
+the default `scip-from-source` used by `build.sh`), the bundled `libscip.so`
+needs the following at runtime:
+
+- `libgfortran.so.5` (e.g. `libgfortran5`).
+- `libquadmath.so.0` (e.g. `libquadmath0`). On Ubuntu 24.04 the `libgfortran5`
+  package does not pull `libquadmath0` automatically.
+- `LD_LIBRARY_PATH` must point at the directory containing the bundled
+  `libscip.so` (it is linked without an rpath).
+
+The `scip-from-source` build avoids both: SCIP is statically linked, and the
+binary only retains the standard system libraries listed in the bullet above.
 
 ## Licensing
 
