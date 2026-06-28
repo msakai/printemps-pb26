@@ -50,6 +50,7 @@ jobs:
           mkdir -p "$STAGE/bin" "$STAGE/Exact" "$STAGE/printemps"
           cp bin/Exact bin/pb_competition_2025_solver bin/exact-printemps bin/scip-printemps "$STAGE/bin/"
           git archive --format=tar HEAD | tar -x -C "$STAGE"
+          rm -r "$STAGE/misc"
           git -C Exact archive --format=tar HEAD | tar -x -C "$STAGE/Exact"
           git -C printemps archive --format=tar HEAD | tar -x -C "$STAGE/printemps"
           {
