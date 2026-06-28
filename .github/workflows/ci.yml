@@ -73,6 +73,17 @@ jobs:
       - name: Smoke Test (printemps)
         run: bin/pb_competition_2025_solver -k -1 -t 30 -r 12345 Exact/test/instances/opb/opt/air03.opb
 
+      - name: Smoke Test (printemps, WBO)
+        # WBO instance: optimal x1=0 has cost 2 (misc/OPBcompetition.md §4.2.1).
+        # Confirms PRINTEMPS reads the .wbo natively and reports the optimum
+        # cost. PRINTEMPS is incomplete (see README "Complete or not?"), so it
+        # cannot prove optimality — expect `s SATISFIABLE`, not `s OPTIMUM FOUND`.
+        run: |
+          out=$(bin/pb_competition_2025_solver -k -1 -t 30 -r 12345 Exact/test/instances/wbo/example1.wbo)
+          echo "$out"
+          echo "$out" | grep -qE '^s SATISFIABLE$'
+          echo "$out" | grep -qE '^o 2$'
+
       - name: Smoke Test (exact-printemps)
         run: bin/exact-printemps -t 60 --exact-time 30 --seed 12345 --use-fixed-literals Exact/test/instances/opb/opt/air03.opb
 
