@@ -52,7 +52,7 @@ DIR/bin/scip-printemps --printemps-path DIR/bin/pb_competition_2025_solver --sav
 | `src/`             | Rust driver source (`exact-printemps` and `scip-printemps`). |
 | `Exact/`           | Submodule: Exact (AGPL-3.0). |
 | `printemps/`       | Submodule: PRINTEMPS (MIT). |
-| `build.sh`         | Builds all three components and copies binaries to `bin/`. |
+| `build.sh`         | Builds the solvers and copies the resulting binaries to `bin/`. |
 | `Cargo.toml`       | Cargo manifest for the driver. |
 | `LICENSE`          | MIT license for the driver itself; bundled components keep their own licenses. |
 
@@ -73,23 +73,28 @@ bin/
 └── scip-printemps                 # MIT (links SCIP & SoPlex, both Apache-2.0)
 ```
 
-The `scip-printemps` binary is opt-in via `BUILD_SCIP_PRINTEMPS=ON`. When
-`STATIC=ON` (default), `exact-printemps` is fully statically linked with
-`+crt-static`, while `scip-printemps` links SCIP/SoPlex statically (via the
-`scip-from-source` Cargo feature, which builds SCIP from source with
-`-DSHARED=OFF`) but keeps glibc/libstdc++/libgomp dynamic. See
-[README_scip_printemps.md](README_scip_printemps.md) for the supported
-SCIP build modes (`scip`, `scip-bundled`, `scip-from-source`).
+The `scip-printemps` binary is opt-in via `BUILD_SCIP_PRINTEMPS=ON`; without
+it, `build.sh` produces only the other three binaries.
 
-By default `build.sh` links all three binaries statically (Exact and
-`pb_competition_2025_solver` via `-static`, `exact-printemps` via Rust's
-`+crt-static`) so the artifacts in `bin/` can be copied to other Linux
-hosts without matching the build host's libc/libstdc++/libgomp versions.
-The build needs the corresponding static archives (e.g. `libc6-dev`,
-`libstdc++-*-dev`, `libgomp1` on Debian/Ubuntu, plus `libboost-dev` for
-Exact). Pass `STATIC=OFF ./build.sh` to fall back to dynamic linking if
-those archives are unavailable. The script prints `file(1)` output for
-each artifact at the end so you can confirm the linkage mode.
+By default (`STATIC=ON`), `build.sh` tries to link the binaries statically,
+so the artifacts in `bin/` can be deployed to other Linux hosts regardless of
+their installed shared libraries:
+
+- `Exact` and `pb_competition_2025_solver` are linked with `-static`.
+- `exact-printemps` is fully statically linked via Rust's `+crt-static`.
+- `scip-printemps` links SCIP/SoPlex statically (via the `scip-from-source`
+  Cargo feature, which builds SCIP from source with `-DSHARED=OFF`) but keeps
+  glibc/libstdc++/libgomp dynamic.
+
+The build requires the corresponding development packages (e.g. `libc6-dev`,
+`libstdc++-*-dev`, `libgomp1` on Debian/Ubuntu, plus `libboost-dev` for the
+Exact solver). Run `STATIC=OFF ./build.sh` to use dynamic linking instead.
+The script runs `file(1)` on each artifact at the end so you can confirm the
+linkage mode.
+
+See [README_scip_printemps.md](README_scip_printemps.md) for the supported
+SCIP build modes (`scip`, `scip-bundled`, `scip-from-source`) and the
+`scip-printemps`-specific build details.
 
 ## Licensing
 
