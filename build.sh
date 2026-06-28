@@ -20,32 +20,23 @@ echo "[pb] building PRINTEMPS pb_competition_2025_solver"
 
 echo "[pb] building driver binaries"
 # scip-printemps is optional. Set BUILD_SCIP_PRINTEMPS=ON to also build it.
-# When the `scip-from-source` feature is used (default), SCIP itself is linked
-# statically into scip-printemps; common system libraries (glibc, libstdc++,
-# libgcc_s, libgomp) remain dynamically linked because rust's `+crt-static`
-# cannot cover SCIP's C++ runtime. exact-printemps therefore always has to be
-# built in a separate cargo invocation when STATIC=ON.
 BUILD_SCIP_PRINTEMPS="${BUILD_SCIP_PRINTEMPS:-OFF}"
 SCIP_PRINTEMPS_FEATURE="${SCIP_PRINTEMPS_FEATURE:-scip-from-source}"
 
 if [ "$STATIC" = "ON" ]; then
-  echo "[pb] (1/2) exact-printemps with +crt-static"
-  ( cd "$ROOT" && RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static" \
-      cargo build --release --bin exact-printemps )
-  if [ "$BUILD_SCIP_PRINTEMPS" = "ON" ]; then
-    echo "[pb] (2/2) scip-printemps with --features $SCIP_PRINTEMPS_FEATURE (dynamic crt)"
-    ( cd "$ROOT" && cargo build --release --bin scip-printemps \
-        --features "$SCIP_PRINTEMPS_FEATURE" )
-  fi
+  RUST_STATIC_FLAGS="-C target-feature=+crt-static"
 else
-  if [ "$BUILD_SCIP_PRINTEMPS" = "ON" ]; then
-    echo "[pb] exact-printemps + scip-printemps with --features $SCIP_PRINTEMPS_FEATURE (dynamic)"
-    ( cd "$ROOT" && cargo build --release --bins \
-        --features "$SCIP_PRINTEMPS_FEATURE" )
-  else
-    echo "[pb] exact-printemps (dynamic)"
-    ( cd "$ROOT" && cargo build --release --bin exact-printemps )
-  fi
+  RUST_STATIC_FLAGS=""
+fi
+
+if [ "$BUILD_SCIP_PRINTEMPS" = "ON" ]; then
+  echo "[pb] exact-printemps + scip-printemps with --features $SCIP_PRINTEMPS_FEATURE"
+  ( cd "$ROOT" && RUSTFLAGS="${RUSTFLAGS:-} ${RUST_STATIC_FLAGS}" \
+      cargo build --release --bins --features "$SCIP_PRINTEMPS_FEATURE" --target x86_64-unknown-linux-gnu )
+else
+  echo "[pb] exact-printemps"
+  ( cd "$ROOT" && RUSTFLAGS="${RUSTFLAGS:-} ${RUST_STATIC_FLAGS}" \
+      cargo build --release --bin exact-printemps --target x86_64-unknown-linux-gnu )
 fi
 
 mkdir -p "$ROOT/bin"
