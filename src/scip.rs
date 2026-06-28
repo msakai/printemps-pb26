@@ -297,19 +297,26 @@ pub fn run(cfg: ScipConfig<'_>) -> Result<ScipRun, String> {
         if !looks_like_pb_var(&name) {
             continue;
         }
-        // After `solve()`, local bounds at the focus (root) node equal the
-        // tightest bounds SCIP could prove globally for this variable, and a
-        // binary variable with lb == ub is fixed by SCIP. Note that these
-        // global bounds are tightened by both primal reductions (preserving
-        // every feasible solution) and dual reductions (which use the
-        // objective cutoff and only preserve at least one optimal solution).
-        // So fixings may cut off feasible-but-suboptimal solutions whose
-        // objective is better than the current incumbent — at least one true
-        // optimum is still preserved, so handing these to PRINTEMPS as hard
-        // fixings is safe for optimization but is not equivalent to "fixed
-        // across all feasible solutions".
-        let lb = var.lb();
-        let ub = var.ub();
+        // Read the *global* bounds SCIP has proved for this variable; a binary
+        // variable with global lb == ub is fixed by SCIP. We must use
+        // `SCIPvarGetLb/UbGlobal` here, NOT russcip's `var.lb()` / `var.ub()`,
+        // which call `SCIPvarGetLb/UbLocal`: after a time-limited solve the
+        // focus node is a *deep* branch-and-bound node, so its local bounds
+        // carry that subtree's branching decisions — not global fixings — and
+        // routinely contradict the incumbent (which lives in another subtree).
+        // Feeding those to PRINTEMPS as fixings corrupts the warm start (and,
+        // with `--use-fixed-literals`, hard-fixes variables to wrong values).
+        // Note that the global bounds are tightened by both primal reductions
+        // (preserving every feasible solution) and dual reductions (which use
+        // the objective cutoff and only preserve at least one optimal
+        // solution). So fixings may cut off feasible-but-suboptimal solutions
+        // whose objective is better than the current incumbent — at least one
+        // true optimum is still preserved, so handing these to PRINTEMPS as
+        // hard fixings is safe for optimization but is not equivalent to
+        // "fixed across all feasible solutions".
+        // SAFETY: `var` owns a clone of the live SCIP `Rc` for this call.
+        let lb = unsafe { ffi::SCIPvarGetLbGlobal(var.inner()) };
+        let ub = unsafe { ffi::SCIPvarGetUbGlobal(var.inner()) };
         if (ub - lb).abs() < 0.5 {
             let v = if lb >= 0.5 { 1 } else { 0 };
             fixed_vars.push(VarAssignment {
