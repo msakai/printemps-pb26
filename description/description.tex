@@ -31,14 +31,13 @@ PRINTEMPS is a metaheuristic solver originally developed for general integer lin
 PRINTEMPS (PoRtable INTEger Mathematical Programming Solver) is a metaheuristic solver developed by the first author for general integer linear programming (ILP) problems \cite{printemps}. The PB-specific extension and the rationale of the encoding of nonlinear terms and soft constraints are unchanged from our Pseudo-Boolean Competition 2025 submission, and we refer the reader to that description \cite{printemps-pb25} for the details. This document focuses on what is new for 2026:
 \begin{itemize}
 \item widened OPB-parser coefficient range from 32-bit to 64-bit signed integers, with a remaining 53-bit limitation on the internal double-precision arithmetic (Sec.~\ref{sec:coeff});
-\item the two hybrid solvers \texttt{exact-printemps} and \texttt{scip-printemps} that pair PRINTEMPS with an off-the-shelf complete PB / MIP solver (Sec.~\ref{sec:hybrid}), together with several safeguards against SCIP's double-precision numerical issues (Sec.~\ref{sec:scip-guards});
+\item the two hybrid solvers \texttt{exact-printemps} and \texttt{scip-printemps} that pair PRINTEMPS with an off-the-shelf complete PB / MIP solver (Sec.~\ref{sec:hybrid});
+\item several safeguards against SCIP's double-precision numerical issues in \texttt{scip-printemps} (Sec.~\ref{sec:scip-guards});
 \item minor PRINTEMPS-side improvements collected since the 2025 submission (Sec.~\ref{sec:other}).
 \end{itemize}
 
 \section{Supported Problems}
 The submitted solvers target the same six categories as our 2025 submission: \textbf{DEC-LIN}, \textbf{DEC-NLC}, \textbf{OPT-LIN}, \textbf{OPT-NLC}, \textbf{PARTIAL-LIN}, and \textbf{SOFT-LIN}. None of the three submitted solvers participates in the \texttt{-CERT} tracks: PRINTEMPS is heuristic and cannot prove optimality or infeasibility, and although Exact and SCIP are themselves complete, the hybrid drivers do not collect or emit a VeriPB-style certificate.
-
-The hybrid drivers \texttt{exact-printemps} and \texttt{scip-printemps} forward the OPB instance to the first-phase solver as-is. They therefore inherit the input-format support of that solver: in particular, in the nonlinear categories the linearization of products is performed inside Exact / SCIP / PRINTEMPS rather than by the driver.
 
 \section{PRINTEMPS}
 
@@ -51,7 +50,7 @@ In the 2025 submission each OPB coefficient had to fit within the range of a 31-
 Internally, however, PRINTEMPS represents coefficients as IEEE-754 double-precision floating-point values, whose mantissa carries only 53 bits. To avoid silently producing wrong answers when a coefficient cannot be represented exactly, the \texttt{pb\_competition\_2025\_solver} front-end inspects the bit width of the largest absolute coefficient (the \texttt{intsize} field of the OPB metadata) and, if it exceeds 53, prints \texttt{s UNSUPPORTED} and exits before solving. The hybrid drivers inherit this behavior because their second phase invokes the same PRINTEMPS executable. Compared to the 2025 submission this widens the supported range from 31 to 53 bits, but instances with truly 64-bit coefficients remain out of scope.
 
 \subsection{Warm-starting interfaces}\label{sec:warm-start}
-To make PRINTEMPS usable as the second phase of a hybrid pipeline, the bundled executable \texttt{pb\_competition\_2025\_solver} gained two new file-based command-line options:
+To make PRINTEMPS usable as the second phase of a hybrid pipeline (Sec.~\ref{sec:hybrid}), the bundled executable \texttt{pb\_competition\_2025\_solver} gained two new file-based command-line options:
 \begin{itemize}
 \item \texttt{-i FILE} --- read an \emph{initial solution} as a list of \texttt{xN VALUE} lines. The values are used to seed the local search.
 \item \texttt{-f FILE} --- read a list of \emph{fixed variables} in the same format. Variables listed here are pinned to the given value throughout the search.
@@ -59,19 +58,12 @@ To make PRINTEMPS usable as the second phase of a hybrid pipeline, the bundled e
 Both inputs are post-processed by PRINTEMPS so that values supplied for original OPB variables are propagated to the auxiliary variables introduced internally during linearization, including negated-literal aliases and product variables.
 
 \subsection{Other PRINTEMPS-side improvements}\label{sec:other}
-The most user-visible non-hybrid fixes since the 2025 submission are:
-\begin{itemize}
-\item a SEGV when importing OPB files containing negated literals in certain positions is fixed;
-\item soft inequality constraints whose coefficients are all negative are now imported correctly;
-\item infeasibility detected during preprocessing (e.g.\ from contradictory variable bounds) is now reported as \texttt{s UNSATISFIABLE} together with a human-readable message, instead of an unhandled exception;
-\item the \texttt{-j} option no longer triggers an infinite loop on some configurations;
-\item default values of the time and iteration limits are now ``unlimited'', so the absence of a flag no longer silently truncates the run.
-\end{itemize}
+The most user-visible non-hybrid change since the 2025 submission is that infeasibility detected during preprocessing (for example, contradictory variable bounds produced by bound propagation on the imported constraints) is now reported cleanly as \texttt{s UNSATISFIABLE} together with a human-readable message, instead of surfacing as an unhandled exception. The remaining changes are a handful of bug fixes and default-value tweaks that do not affect the algorithm.
 
 \section{Hybrid Solvers}\label{sec:hybrid}
 
 \subsection{Motivation}
-PRINTEMPS is a local-search solver and depends strongly on the quality of the starting point. Complete PB / MIP solvers, on the other hand, often find good incumbents and prove a substantial number of variables to be globally fixed during presolve and root-node processing, but may exhaust their time budget before closing the gap on hard optimization instances. The two hybrid drivers, \texttt{exact-printemps} and \texttt{scip-printemps}, are intended to combine the two: spend an initial budget on a complete solver, hand its incumbent and the variables it has proved fixed to PRINTEMPS, and let PRINTEMPS continue to improve the assignment within the remaining time.
+PRINTEMPS is a local-search solver and depends strongly on the quality of the starting point. Complete PB / MIP solvers, on the other hand, often find good incumbents and prove a substantial number of variables to be globally fixed during presolve and root-node processing, but may exhaust their time budget before closing the gap on hard optimization instances. The two hybrid drivers, \texttt{exact-printemps} and \texttt{scip-printemps}, are intended to combine the two: spend an initial budget on a complete solver, hand its incumbent and the variables it has proved fixed to PRINTEMPS, and let PRINTEMPS continue to improve the assignment within the remaining time. We paired PRINTEMPS with two complementary complete solvers: Exact \cite{exact}, a native PB / ILP solver whose search combines conflict analysis with cutting-plane reasoning, and SCIP \cite{scip}, a widely used general-purpose MIP solver.
 
 \subsection{Two-phase pipeline}
 Both hybrid drivers follow the same two-phase shape:
@@ -81,8 +73,7 @@ Both hybrid drivers follow the same two-phase shape:
 \end{enumerate}
 If phase 1 returns a \emph{final} verdict---\texttt{OPTIMUM FOUND}, \texttt{UNSATISFIABLE}, or \texttt{SATISFIABLE} on a decision instance---phase 2 is skipped and phase 1's answer is emitted. Otherwise, phase 1's tentative \texttt{s\,\ldots} and \texttt{v\,\ldots} lines are downgraded to PB comments (\texttt{c exact-final:\ \ldots}, \texttt{c scip-incumbent:\ \ldots}) and PRINTEMPS' answer is emitted instead. If PRINTEMPS exits without a feasible solution while phase~1 did find one, the driver falls back to the phase-1 incumbent and synthesizes a \texttt{s SATISFIABLE} / \texttt{v\,\ldots} block from it. By construction the combined stdout contains at most one final \texttt{s} / \texttt{v} block.
 
-\subsection{Solver-agnostic hand-off}
-The information exchanged between phases is collected in a single solver-agnostic payload carrying the incumbent, the fixed-variable list, and the primal / dual bounds. Fields are optional, so each phase populates only what it can produce (e.g.\ SCIP additionally supplies a dual bound which is persisted to disk; PRINTEMPS does not currently consume it). The same structure could in principle carry a PRINTEMPS-produced assignment back to a subsequent SCIP / Exact stage as a warm start; this direction is not exercised in the present submission.
+The information exchanged between the two phases is collected in a single solver-agnostic payload carrying the incumbent, the fixed-variable list, and the primal / dual bounds. Fields are optional, so each phase populates only what it can produce---for example SCIP additionally supplies a dual bound, which is persisted to disk but not consumed by PRINTEMPS today. The driver forwards the OPB instance to the first-phase solver as-is; the nonlinear categories thus rely on the product linearization inside Exact / SCIP / PRINTEMPS rather than on the driver.
 
 \subsection{Guarding against SCIP numerical issues}\label{sec:scip-guards}
 SCIP solves in IEEE-754 double precision, which represents integers exactly only up to $2^{53}$. This can bite in two ways: on instances with large coefficients, feasibility itself can be judged wrong (e.g.\ a constraint of the form $a - b \ge 1$ with $a, b \approx 2^{64}$ loses the $\pm 1$ and looks trivially satisfiable); and even with smaller coefficients, LP relaxations can run into numerical instability mid-solve, corrupting the dual bound and any optimality or infeasibility \emph{proof} built on it. To keep \texttt{scip-printemps} from emitting a wrong final answer under these conditions, three complementary guards are installed. The first two are always on; the third is on by default and controlled by a threshold flag.
@@ -93,17 +84,14 @@ SCIP solves in IEEE-754 double precision, which represents integers exactly only
 \end{itemize}
 \texttt{exact-printemps} does not need these guards: Exact uses arbitrary-precision arithmetic internally.
 
-\subsection{Signal handling and time budget}
+\subsection{Signal handling}
 A dedicated thread in the driver listens for \texttt{SIGINT}, \texttt{SIGTERM}, and \texttt{SIGXCPU} and forwards them to the currently active child via \texttt{kill(pid, sig)}; children are placed in their own process group so that a terminal Ctrl-C is not double-delivered. Both Exact and PRINTEMPS gracefully emit their best-known solution on these signals and the driver waits for them to flush before exiting. One known limitation: \texttt{russcip}'s \texttt{solve()} consumes the model, so the driver currently cannot call \texttt{SCIPinterruptSolve} from a side thread; a signal arriving during phase~1 of \texttt{scip-printemps} is therefore observed only after SCIP terminates by its own time limit, and in that case phase~2 is skipped.
 
 \subsection{Limitations and future work}
-The current hybrid drivers are deliberately restricted to a simple sequential ``phase 1 then phase 2'' pipeline. Richer compositions we considered but did not implement in time for this submission include: (i) running PRINTEMPS and the complete solver \emph{in parallel} and letting each pull the other's best incumbent as it improves; (ii) \emph{alternating} the two solvers in multiple rounds, so that PRINTEMPS' improved incumbent is fed back to Exact / SCIP as a warm start and its dual bound in turn tightens the search space seen by PRINTEMPS. The \texttt{SolverHandoff} payload is already directional-agnostic, and the SCIP hand-off already carries a dual bound that is currently only persisted to disk; these are the mechanical prerequisites for such an extension. Wiring the loop itself, together with a matching flag on the PRINTEMPS binary to consume a dual bound, is left for future work.
-
-\subsection{Build and packaging}
-The hybrid drivers form a single Rust crate that produces the two binaries \texttt{exact-printemps} and \texttt{scip-printemps}. The SCIP integration is gated behind a Cargo feature so that the Exact-based binary builds on hosts without SCIP installed. The submitted Linux binaries are built with static linking: Exact and \texttt{pb\_competition\_2025\_solver} are fully statically linked; SCIP and SoPlex are linked statically into \texttt{scip-printemps} (with \texttt{-DSHARED=OFF}), while \texttt{glibc}, \texttt{libstdc++}, and \texttt{libgomp} remain dynamically linked.
+The current hybrid drivers are deliberately restricted to a simple sequential ``phase 1 then phase 2'' pipeline. Richer compositions we considered but did not implement in time for this submission include: (i) running PRINTEMPS and the complete solver \emph{in parallel} and letting each pull the other's best incumbent as it improves; (ii) \emph{alternating} the two solvers in multiple rounds, so that PRINTEMPS' improved incumbent is fed back to Exact / SCIP as a warm start and its dual bound in turn tightens the search space seen by PRINTEMPS. The inter-phase payload is already directional-agnostic, and the SCIP hand-off already carries a dual bound that is currently only persisted to disk; these are the mechanical prerequisites for such an extension. Wiring the loop itself, together with a matching flag on the PRINTEMPS binary to consume a dual bound, is left for future work.
 
 \section{Conclusion}
-For the Pseudo-Boolean Competition 2026 we submit PRINTEMPS together with two hybrid drivers, \texttt{exact-printemps} and \texttt{scip-printemps}, that respectively pair PRINTEMPS with Exact and SCIP. The PB-specific extensions of PRINTEMPS itself are inherited unchanged from the 2025 submission; the main additions are the wider coefficient range, file-based warm-starting interfaces, and the two-phase hybrid drivers built on top of them.
+For the Pseudo-Boolean Competition 2026 we submit PRINTEMPS together with two hybrid drivers, \texttt{exact-printemps} and \texttt{scip-printemps}, that respectively pair PRINTEMPS with Exact and SCIP. The PB-specific extensions of PRINTEMPS itself are inherited unchanged from the 2025 submission; the main additions are the wider coefficient range, the file-based warm-starting interfaces, the two-phase hybrid drivers built on top of them, and, for \texttt{scip-printemps}, a layered set of safeguards (exact-integer verification of the incumbent and its objective, a numerical-reliability guard on SCIP's messages, and an \texttt{intsize}-based skip) that prevent SCIP's double-precision arithmetic from turning into a wrong final answer.
 
 \begin{thebibliography}{1}
 \bibitem{printemps}
