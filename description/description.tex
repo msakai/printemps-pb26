@@ -28,7 +28,7 @@ PRINTEMPS is a metaheuristic solver originally developed for general integer lin
 \end{abstract}
 
 \section{Introduction}
-PRINTEMPS (PoRtable INTEger Mathematical Programming Solver) is a metaheuristic solver developed by the first author for general integer linear programming (ILP) problems \cite{printemps}. The PB-specific extension and the rationale of the encoding of nonlinear terms and soft constraints are unchanged from our Pseudo-Boolean Competition 2025 submission, and we refer the reader to that description \cite{printemps-pb25} for the details. This document focuses on what is new for 2026:
+PRINTEMPS (PoRtable INTEger Mathematical Programming Solver) is a metaheuristic solver developed by the second author for general integer linear programming (ILP) problems \cite{printemps}. The PB-specific extension and the rationale of the encoding of nonlinear terms and soft constraints are unchanged from our Pseudo-Boolean Competition 2025 submission, and we refer the reader to that description \cite{printemps-pb25} for the details. This document focuses on what is new for 2026:
 \begin{itemize}
 \item widened OPB-parser coefficient range from 32-bit to 64-bit signed integers, with a remaining 53-bit limitation on the internal double-precision arithmetic (Sec.~\ref{sec:coeff});
 \item the two hybrid solvers \texttt{exact-printemps} and \texttt{scip-printemps} that pair PRINTEMPS with an off-the-shelf complete PB / MIP solver (Sec.~\ref{sec:hybrid});
