@@ -136,6 +136,222 @@ impl SolverHandoff {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn var(name: &str, value: u8) -> VarAssignment {
+        VarAssignment {
+            name: name.to_string(),
+            value,
+        }
+    }
+
+    // --- to_pb_v_line ---
+
+    #[test]
+    fn to_pb_v_line_none() {
+        assert_eq!(SolverHandoff::new().to_pb_v_line(), None);
+    }
+
+    #[test]
+    fn to_pb_v_line_empty_incumbent() {
+        let h = SolverHandoff {
+            incumbent: Some(vec![]),
+            ..Default::default()
+        };
+        assert_eq!(h.to_pb_v_line(), Some("v".to_string()));
+    }
+
+    #[test]
+    fn to_pb_v_line_all_ones() {
+        let h = SolverHandoff {
+            incumbent: Some(vec![var("x1", 1), var("x2", 1), var("x3", 1)]),
+            ..Default::default()
+        };
+        assert_eq!(h.to_pb_v_line(), Some("v x1 x2 x3".to_string()));
+    }
+
+    #[test]
+    fn to_pb_v_line_mixed() {
+        let h = SolverHandoff {
+            incumbent: Some(vec![var("x1", 1), var("x2", 0), var("x3", 1)]),
+            ..Default::default()
+        };
+        assert_eq!(h.to_pb_v_line(), Some("v x1 -x2 x3".to_string()));
+    }
+
+    // --- write_printemps_initial_solution ---
+
+    #[test]
+    fn write_printemps_empty_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("out.sol");
+        assert!(!SolverHandoff::new()
+            .write_printemps_initial_solution(&p)
+            .unwrap());
+    }
+
+    #[test]
+    fn write_printemps_incumbent_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("out.sol");
+        let h = SolverHandoff {
+            incumbent: Some(vec![var("x1", 1), var("x2", 0), var("x3", 1)]),
+            ..Default::default()
+        };
+        assert!(h.write_printemps_initial_solution(&p).unwrap());
+        assert_eq!(fs::read_to_string(&p).unwrap(), "x1 1\nx2 0\nx3 1\n");
+    }
+
+    #[test]
+    fn write_printemps_fixed_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("out.sol");
+        let h = SolverHandoff {
+            fixed_vars: vec![var("x5", 0), var("x7", 1)],
+            ..Default::default()
+        };
+        assert!(h.write_printemps_initial_solution(&p).unwrap());
+        assert_eq!(fs::read_to_string(&p).unwrap(), "x5 0\nx7 1\n");
+    }
+
+    #[test]
+    fn write_printemps_fixed_wins_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("out.sol");
+        let h = SolverHandoff {
+            fixed_vars: vec![var("x1", 0)],
+            incumbent: Some(vec![var("x1", 1), var("x2", 1)]),
+            ..Default::default()
+        };
+        h.write_printemps_initial_solution(&p).unwrap();
+        let content = fs::read_to_string(&p).unwrap();
+        // x1 must appear exactly once with value 0 (fixed wins).
+        assert_eq!(content, "x1 0\nx2 1\n");
+    }
+
+    #[test]
+    fn write_printemps_skips_empty_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("out.sol");
+        let h = SolverHandoff {
+            fixed_vars: vec![var("", 1), var("x1", 1)],
+            incumbent: Some(vec![var("", 0), var("x2", 0)]),
+            ..Default::default()
+        };
+        h.write_printemps_initial_solution(&p).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), "x1 1\nx2 0\n");
+    }
+
+    // --- write_fixed_vars ---
+
+    #[test]
+    fn write_fixed_vars_normal() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("fixed.txt");
+        let h = SolverHandoff {
+            fixed_vars: vec![var("x3", 1), var("x9", 0)],
+            ..Default::default()
+        };
+        h.write_fixed_vars(&p).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), "x3 1\nx9 0\n");
+    }
+
+    #[test]
+    fn write_fixed_vars_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("fixed.txt");
+        SolverHandoff::new().write_fixed_vars(&p).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), "");
+    }
+
+    #[test]
+    fn write_fixed_vars_skips_empty_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("fixed.txt");
+        let h = SolverHandoff {
+            fixed_vars: vec![var("", 1), var("x4", 0)],
+            ..Default::default()
+        };
+        h.write_fixed_vars(&p).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), "x4 0\n");
+    }
+
+    // --- write_bounds_json ---
+
+    #[test]
+    fn write_bounds_json_with_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("bounds.json");
+        let h = SolverHandoff {
+            primal_bound: Some(42.0),
+            dual_bound: Some(-1.5),
+            ..Default::default()
+        };
+        h.write_bounds_json(&p, "OPTIMUM_FOUND", 1.25, Some(0))
+            .unwrap();
+        let s = fs::read_to_string(&p).unwrap();
+        assert!(s.contains("\"status\": \"OPTIMUM_FOUND\""));
+        assert!(s.contains("\"primal_bound\": 42"));
+        assert!(s.contains("\"dual_bound\": -1.5"));
+        assert!(s.contains("\"elapsed_sec\": 1.250000"));
+        assert!(s.contains("\"exit_code\": 0"));
+    }
+
+    #[test]
+    fn write_bounds_json_none_bounds() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("bounds.json");
+        SolverHandoff::new()
+            .write_bounds_json(&p, "UNKNOWN", 0.0, None)
+            .unwrap();
+        let s = fs::read_to_string(&p).unwrap();
+        assert!(s.contains("\"primal_bound\": null"));
+        assert!(s.contains("\"dual_bound\": null"));
+        assert!(s.contains("\"exit_code\": null"));
+    }
+
+    #[test]
+    fn write_bounds_json_inf_primal() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("bounds.json");
+        let h = SolverHandoff {
+            primal_bound: Some(f64::INFINITY),
+            dual_bound: Some(f64::NEG_INFINITY),
+            ..Default::default()
+        };
+        h.write_bounds_json(&p, "UNKNOWN", 0.0, None).unwrap();
+        let s = fs::read_to_string(&p).unwrap();
+        assert!(s.contains("\"primal_bound\": null"));
+        assert!(s.contains("\"dual_bound\": null"));
+    }
+
+    #[test]
+    fn write_bounds_json_no_exit_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("bounds.json");
+        SolverHandoff::new()
+            .write_bounds_json(&p, "UNKNOWN", 0.5, None)
+            .unwrap();
+        assert!(fs::read_to_string(&p)
+            .unwrap()
+            .contains("\"exit_code\": null"));
+    }
+
+    #[test]
+    fn write_bounds_json_json_escaping() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("bounds.json");
+        SolverHandoff::new()
+            .write_bounds_json(&p, "say \"hello\" \\world", 0.0, None)
+            .unwrap();
+        let s = fs::read_to_string(&p).unwrap();
+        assert!(s.contains(r#"say \"hello\" \\world"#));
+    }
+}
+
 fn escape_json(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {

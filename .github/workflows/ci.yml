@@ -8,7 +8,10 @@ on:
 jobs:
   build:
     name: build (linux x86_64)
-    runs-on: ubuntu-latest
+    # We use older version of Ubuntu to link with older version of glibc.
+    # The glibc version in Ubuntu 22.04 is 2.35, but the actually built scip-printemps
+    # binary only requires GLIBC_2.34.
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,6 +38,9 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --release --bins --features scip-bundled -- -D warnings
 
+      - name: cargo test
+        run: cargo test --release --features scip-bundled
+
       - name: Build
         run: CPU_ARCH=broadwell BUILD_SCIP_PRINTEMPS=ON ./build.sh
 
@@ -44,6 +50,7 @@ jobs:
           mkdir -p "$STAGE/bin" "$STAGE/Exact" "$STAGE/printemps"
           cp bin/Exact bin/pb_competition_2025_solver bin/exact-printemps bin/scip-printemps "$STAGE/bin/"
           git archive --format=tar HEAD | tar -x -C "$STAGE"
+          rm -r "$STAGE/misc"
           git -C Exact archive --format=tar HEAD | tar -x -C "$STAGE/Exact"
           git -C printemps archive --format=tar HEAD | tar -x -C "$STAGE/printemps"
           {
@@ -55,20 +62,51 @@ jobs:
             echo "scip-printemps links SCIP and SoPlex (Apache-2.0) statically;"
             echo "see https://www.scipopt.org/ for the upstream SCIP Optimization Suite."
           } > "$STAGE/BUILD_INFO.txt"
-          tar -czf "$STAGE.tar.gz" "$STAGE"
+          tar -cJf "$STAGE.tar.xz" "$STAGE"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: printemps_pb26
-          path: printemps_pb26.tar.gz
+          path: printemps_pb26.tar.xz
           if-no-files-found: error
 
       - name: Smoke Test (printemps)
         run: bin/pb_competition_2025_solver -k -1 -t 30 -r 12345 Exact/test/instances/opb/opt/air03.opb
 
+      - name: Smoke Test (printemps, WBO)
+        # WBO instance: optimal x1=0 has cost 2 (misc/OPBcompetition.md §4.2.1).
+        # Confirms PRINTEMPS reads the .wbo natively and reports the optimum
+        # cost. PRINTEMPS is incomplete (see README "Complete or not?"), so it
+        # cannot prove optimality — expect `s SATISFIABLE`, not `s OPTIMUM FOUND`.
+        run: |
+          out=$(bin/pb_competition_2025_solver -k -1 -t 30 -r 12345 Exact/test/instances/wbo/example1.wbo)
+          echo "$out"
+          echo "$out" | grep -qE '^s SATISFIABLE$'
+          echo "$out" | grep -qE '^o 2$'
+
       - name: Smoke Test (exact-printemps)
         run: bin/exact-printemps -t 60 --exact-time 30 --seed 12345 --use-fixed-literals Exact/test/instances/opb/opt/air03.opb
 
+      - name: Smoke Test (exact-printemps, WBO)
+        # WBO instance: optimal x1=0 has cost 2 (misc/OPBcompetition.md §4.2.1).
+        # Confirms Exact reads the .wbo and the driver reports it as an
+        # optimization result (not a bare SATISFIABLE).
+        run: |
+          out=$(bin/exact-printemps -t 60 --exact-time 30 --seed 12345 Exact/test/instances/wbo/example1.wbo)
+          echo "$out"
+          echo "$out" | grep -qE '^s OPTIMUM FOUND$'
+          echo "$out" | grep -qE '^o 2$'
+
       - name: Smoke Test (scip-printemps)
         run: bin/scip-printemps -t 60 --scip-time 30 --seed 12345 --use-fixed-literals Exact/test/instances/opb/opt/air03.opb
+
+      - name: Smoke Test (scip-printemps, WBO)
+        # WBO instance: optimal x1=0 has cost 2 (misc/OPBcompetition.md §4.2.1).
+        # Exercises the WBO-aware solution validation: SCIP's incumbent must be
+        # accepted (not discarded) and reported as an optimization result.
+        run: |
+          out=$(bin/scip-printemps -t 60 --scip-time 30 --seed 12345 Exact/test/instances/wbo/example1.wbo)
+          echo "$out"
+          echo "$out" | grep -qE '^s OPTIMUM FOUND$'
+          echo "$out" | grep -qE '^o 2$'

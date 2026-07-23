@@ -31,6 +31,75 @@ impl PrintempsVerdict {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pv_satisfiable() {
+        assert_eq!(
+            PrintempsVerdict::from_status_line("s SATISFIABLE"),
+            PrintempsVerdict::Satisfiable
+        );
+    }
+
+    #[test]
+    fn pv_unsatisfiable() {
+        assert_eq!(
+            PrintempsVerdict::from_status_line("s UNSATISFIABLE"),
+            PrintempsVerdict::Unsatisfiable
+        );
+    }
+
+    #[test]
+    fn pv_unsupported() {
+        assert_eq!(
+            PrintempsVerdict::from_status_line("s UNSUPPORTED"),
+            PrintempsVerdict::Unsupported
+        );
+    }
+
+    #[test]
+    fn pv_unknown_explicit() {
+        assert_eq!(
+            PrintempsVerdict::from_status_line("s UNKNOWN"),
+            PrintempsVerdict::Unknown
+        );
+    }
+
+    #[test]
+    fn pv_empty() {
+        assert_eq!(
+            PrintempsVerdict::from_status_line(""),
+            PrintempsVerdict::Unknown
+        );
+    }
+
+    #[test]
+    fn pv_garbage() {
+        assert_eq!(
+            PrintempsVerdict::from_status_line("random text"),
+            PrintempsVerdict::Unknown
+        );
+    }
+
+    #[test]
+    fn pv_leading_whitespace() {
+        assert_eq!(
+            PrintempsVerdict::from_status_line("   s SATISFIABLE"),
+            PrintempsVerdict::Satisfiable
+        );
+    }
+
+    #[test]
+    fn pv_unsatisfiable_not_unsupported() {
+        assert_ne!(
+            PrintempsVerdict::from_status_line("s UNSATISFIABLE"),
+            PrintempsVerdict::Unsupported
+        );
+    }
+}
+
 pub struct PrintempsRun {
     pub verdict: PrintempsVerdict,
     pub last_s_line: Option<String>,

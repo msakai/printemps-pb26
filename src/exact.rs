@@ -319,6 +319,153 @@ fn parse_fixed_literal_line(body: &str) -> Option<i64> {
 /// accepted by the PRINTEMPS standalone solver's `-f` option. Duplicate
 /// variable indices are kept as the first occurrence; conflicting fixings
 /// are skipped.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- Verdict::from_status_line ---
+
+    #[test]
+    fn verdict_optimum_found() {
+        assert_eq!(
+            Verdict::from_status_line("s OPTIMUM FOUND"),
+            Verdict::OptimumFound
+        );
+    }
+
+    #[test]
+    fn verdict_unsatisfiable() {
+        assert_eq!(
+            Verdict::from_status_line("s UNSATISFIABLE"),
+            Verdict::Unsatisfiable
+        );
+    }
+
+    #[test]
+    fn verdict_satisfiable() {
+        assert_eq!(
+            Verdict::from_status_line("s SATISFIABLE"),
+            Verdict::Satisfiable
+        );
+    }
+
+    #[test]
+    fn verdict_unknown_explicit() {
+        assert_eq!(Verdict::from_status_line("s UNKNOWN"), Verdict::Unknown);
+    }
+
+    #[test]
+    fn verdict_empty_string() {
+        assert_eq!(Verdict::from_status_line(""), Verdict::Unknown);
+    }
+
+    #[test]
+    fn verdict_garbage() {
+        assert_eq!(Verdict::from_status_line("xyzzy"), Verdict::Unknown);
+    }
+
+    #[test]
+    fn verdict_leading_whitespace() {
+        assert_eq!(
+            Verdict::from_status_line("  s OPTIMUM FOUND"),
+            Verdict::OptimumFound
+        );
+    }
+
+    #[test]
+    fn verdict_trailing_newline() {
+        assert_eq!(
+            Verdict::from_status_line("s SATISFIABLE\n"),
+            Verdict::Satisfiable
+        );
+    }
+
+    #[test]
+    fn verdict_prefix_only() {
+        // "s OPTIMUM" without "FOUND" must not match.
+        assert_eq!(Verdict::from_status_line("s OPTIMUM"), Verdict::Unknown);
+    }
+
+    // --- parse_fixed_literal_line ---
+
+    #[test]
+    fn parse_fixed_positive() {
+        assert_eq!(parse_fixed_literal_line("c fixed 42"), Some(42));
+    }
+
+    #[test]
+    fn parse_fixed_negative() {
+        assert_eq!(parse_fixed_literal_line("c fixed -7"), Some(-7));
+    }
+
+    #[test]
+    fn parse_fixed_zero_returns_none() {
+        assert_eq!(parse_fixed_literal_line("c fixed 0"), None);
+    }
+
+    #[test]
+    fn parse_fixed_extra_tokens() {
+        assert_eq!(parse_fixed_literal_line("c fixed 3 extra"), None);
+    }
+
+    #[test]
+    fn parse_fixed_non_c_prefix() {
+        assert_eq!(parse_fixed_literal_line("x fixed 5"), None);
+    }
+
+    #[test]
+    fn parse_fixed_wrong_keyword() {
+        assert_eq!(parse_fixed_literal_line("c notfixed 5"), None);
+    }
+
+    #[test]
+    fn parse_fixed_non_numeric() {
+        assert_eq!(parse_fixed_literal_line("c fixed abc"), None);
+    }
+
+    #[test]
+    fn parse_fixed_empty_string() {
+        assert_eq!(parse_fixed_literal_line(""), None);
+    }
+
+    #[test]
+    fn parse_fixed_leading_whitespace() {
+        // split_whitespace skips leading spaces, so this still matches.
+        assert_eq!(parse_fixed_literal_line("  c fixed 3"), Some(3));
+    }
+
+    #[test]
+    fn parse_fixed_only_c_fixed() {
+        assert_eq!(parse_fixed_literal_line("c fixed"), None);
+    }
+
+    // --- write_printemps_initial_solution (private fn) ---
+
+    #[test]
+    fn exact_write_sol_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("sol.txt");
+        write_printemps_initial_solution(&p, "v x1 -x2 x3").unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "x1 1\nx2 0\nx3 1\n");
+    }
+
+    #[test]
+    fn exact_write_sol_bare_v() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("sol.txt");
+        write_printemps_initial_solution(&p, "v").unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "");
+    }
+
+    #[test]
+    fn exact_write_sol_all_negative() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("sol.txt");
+        write_printemps_initial_solution(&p, "v -x1 -x2").unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "x1 0\nx2 0\n");
+    }
+}
+
 fn write_fixed_literals_file(path: &Path, literals: &[i64]) -> std::io::Result<()> {
     use std::collections::HashMap;
     let mut seen: HashMap<i64, i32> = HashMap::new();

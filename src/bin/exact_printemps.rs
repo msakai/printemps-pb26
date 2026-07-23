@@ -265,7 +265,13 @@ fn run() -> Result<(), String> {
     let is_final = match exact_run.verdict {
         exact::Verdict::OptimumFound => true,
         exact::Verdict::Unsatisfiable => true,
-        exact::Verdict::Satisfiable => !opb_info.has_objective,
+        // A bare `Satisfiable` is final only for a pure-satisfaction (PBS)
+        // instance. For an optimization instance — PBO (`min:`) or WBO (minimize
+        // violated soft-constraint cost) — Exact found a feasible but not
+        // proven-optimal solution, so hand off to PRINTEMPS to improve it
+        // (PRINTEMPS reads WBO natively). Mirrors the same check in
+        // `scip_printemps.rs`.
+        exact::Verdict::Satisfiable => !(opb_info.has_objective || opb_info.is_wbo),
         exact::Verdict::Unknown => false,
     };
 

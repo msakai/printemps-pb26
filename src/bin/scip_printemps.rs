@@ -6,6 +6,11 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 const DEFAULT_SCIP_TIME_SEC: f64 = 300.0;
+/// Skip the SCIP phase when the instance's header `intsize` exceeds this. SCIP
+/// solves in f64, which represents integers exactly only up to 2^53, so beyond
+/// this the constraint coefficients (or their activities) cannot be handled
+/// reliably and PRINTEMPS should solve the instance directly.
+const DEFAULT_SCIP_MAX_INTSIZE: u64 = 53;
 
 struct Args {
     instance: PathBuf,
@@ -19,6 +24,7 @@ struct Args {
     extra_printemps: Vec<String>,
     verbose: bool,
     use_fixed_literals: bool,
+    max_intsize: u64,
 }
 
 fn print_usage() {
@@ -35,9 +41,11 @@ fn print_usage() {
            --scip-arg NAME=VALUE   Extra SCIP parameter (repeatable).\n  \
            --printemps-arg ARG     Extra argument to forward to PRINTEMPS (repeatable).\n  \
            --use-fixed-literals    Forward variables that SCIP has proved fixed\n                          to PRINTEMPS via `-f` (default: disabled).\n  \
+           --scip-max-intsize N    Skip the SCIP phase when the instance header's\n                          intsize exceeds N (default: {default_intsize}).\n  \
            --verbose               Enable driver-level logs on stderr.\n  \
            -h, --help              Show this help and exit.\n",
-        default_scip = DEFAULT_SCIP_TIME_SEC
+        default_scip = DEFAULT_SCIP_TIME_SEC,
+        default_intsize = DEFAULT_SCIP_MAX_INTSIZE
     );
 }
 
@@ -54,6 +62,7 @@ fn parse_args() -> Result<Args, String> {
     let mut extra_printemps: Vec<String> = Vec::new();
     let mut verbose = false;
     let mut use_fixed_literals = false;
+    let mut max_intsize = DEFAULT_SCIP_MAX_INTSIZE;
 
     let mut i = 1;
     while i < argv.len() {
@@ -110,6 +119,11 @@ fn parse_args() -> Result<Args, String> {
                 use_fixed_literals = true;
                 i += 1;
             }
+            "--scip-max-intsize" => {
+                max_intsize = next_arg(&argv, &mut i, "--scip-max-intsize")?
+                    .parse()
+                    .map_err(|e| format!("invalid --scip-max-intsize: {e}"))?;
+            }
             x if x.starts_with('-') => {
                 return Err(format!("unknown option: {x}"));
             }
@@ -146,6 +160,7 @@ fn parse_args() -> Result<Args, String> {
         extra_printemps,
         verbose,
         use_fixed_literals,
+        max_intsize,
     })
 }
 
@@ -199,9 +214,10 @@ fn run() -> Result<(), String> {
     driver_log(
         args.verbose,
         &format!(
-            "instance={} has_objective={}",
+            "instance={} has_objective={} is_wbo={}",
             args.instance.display(),
-            opb_info.has_objective
+            opb_info.has_objective,
+            opb_info.is_wbo
         ),
     );
 
@@ -220,23 +236,66 @@ fn run() -> Result<(), String> {
     let scip_incumbent_sol_path = args.save_dir.join("scip_incumbent.sol");
     let scip_fixed_vars_path = args.save_dir.join("scip_fixed_vars.txt");
 
-    println!(
-        "c scip-printemps: phase 1 (SCIP, budget={:.3}s)",
-        scip_budget
-    );
-    let scip_run = scip::run(scip::ScipConfig {
-        instance: &args.instance,
-        timeout_sec: scip_budget,
-        seed: args.seed,
-        threads: args.threads,
-        extra_params: &args.scip_params,
-        log_path: &scip_log_path,
-        bounds_path: &scip_bounds_path,
-        incumbent_sol_path: &scip_incumbent_sol_path,
-        fixed_vars_path: &scip_fixed_vars_path,
-        interrupt_flag: &interrupt_flag,
-    })
-    .map_err(|e| format!("SCIP phase failed: {e}"))?;
+    // Skip SCIP entirely when the instance's coefficients are too large for
+    // f64 to represent exactly. SCIP would otherwise solve a lossy model and
+    // could return a wrong verdict (a false UNSATISFIABLE / wrong optimum has no
+    // incumbent for the Phase-1.5 verifier to catch), so hand straight to
+    // PRINTEMPS. `intsize == None` (no header) does not skip; the verifier still
+    // guards the incumbent in that case.
+    let scip_run = if let Some(n) = opb_info.intsize.filter(|&n| n > args.max_intsize) {
+        println!(
+            "c scip-printemps: skipping SCIP (intsize={n} > {}; coefficients exceed f64 exact range)",
+            args.max_intsize
+        );
+        driver_log(
+            args.verbose,
+            &format!(
+                "skipping SCIP phase: intsize={n} > max_intsize={}",
+                args.max_intsize
+            ),
+        );
+        // Drop any stale warm-start artifacts left by an earlier run in this
+        // (reused) save-dir, so PRINTEMPS does not pick up another instance's
+        // incumbent.
+        let _ = fs::remove_file(&scip_incumbent_sol_path);
+        let _ = fs::remove_file(&scip_fixed_vars_path);
+        scip::ScipRun::unknown()
+    } else {
+        println!(
+            "c scip-printemps: phase 1 (SCIP, budget={:.3}s)",
+            scip_budget
+        );
+        match scip::run(scip::ScipConfig {
+            instance: &args.instance,
+            has_objective: opb_info.has_objective,
+            is_wbo: opb_info.is_wbo,
+            timeout_sec: scip_budget,
+            seed: args.seed,
+            threads: args.threads,
+            extra_params: &args.scip_params,
+            log_path: &scip_log_path,
+            bounds_path: &scip_bounds_path,
+            incumbent_sol_path: &scip_incumbent_sol_path,
+            fixed_vars_path: &scip_fixed_vars_path,
+            interrupt_flag: &interrupt_flag,
+        }) {
+            Ok(r) => r,
+            // A SCIP failure (e.g. an unreadable instance) must not abort the
+            // run: downgrade it to a comment and fall through to PRINTEMPS,
+            // which may still solve the instance. The error is buffered behind
+            // `c` so stdout keeps speaking PB-competition format.
+            Err(e) => {
+                println!("c scip-printemps: SCIP phase failed ({e}); continuing to PRINTEMPS");
+                scip::ScipRun::unknown()
+            }
+        }
+    };
+    if let Some(w) = &scip_run.numerical_warning {
+        println!(
+            "c scip-printemps: SCIP reported numerical-reliability warnings ({w}); \
+             not trusting its OPTIMUM/UNSAT verdict, handing off to PRINTEMPS"
+        );
+    }
     driver_log(
         args.verbose,
         &format!(
@@ -252,7 +311,10 @@ fn run() -> Result<(), String> {
     let is_final = match scip_run.verdict {
         scip::ScipVerdict::OptimumFound => true,
         scip::ScipVerdict::Unsatisfiable => true,
-        scip::ScipVerdict::Satisfiable => !opb_info.has_objective,
+        // A bare `Satisfiable` is final only for a pure-satisfaction (PBS)
+        // instance. For an optimization instance (PBO `min:` or WBO) it means
+        // SCIP did not prove optimality, so hand off to PRINTEMPS to improve it.
+        scip::ScipVerdict::Satisfiable => !(opb_info.has_objective || opb_info.is_wbo),
         scip::ScipVerdict::Unknown => false,
     };
 

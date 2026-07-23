@@ -41,6 +41,8 @@ scip-printemps [OPTIONS] <instance.opb>
   --printemps-arg ARG     Extra argument to forward to PRINTEMPS (repeatable).
   --use-fixed-literals    Forward variables that SCIP has proved fixed
                           to PRINTEMPS via `-f` (default: disabled).
+  --scip-max-intsize N    Skip the SCIP phase when the instance header's
+                          intsize exceeds N (default: 53).
   --verbose               Enable driver-level logs on stderr.
   -h, --help              Show this help and exit.
 ```
@@ -63,6 +65,68 @@ solve is appended to `<save-dir>/scip_log.txt`.
   driver falls back to the SCIP incumbent and emits a final
   `s SATISFIABLE` / `v …` block based on it.
 
+## Solution verification and large coefficients
+
+SCIP solves in IEEE-754 `f64`, so its results are only as reliable as double
+precision allows. This bites in two distinct ways. First, `f64` represents
+integers exactly only up to `2^53`: on instances with larger coefficients SCIP
+can return an incumbent that violates a constraint it believes satisfied — e.g.
+`a - b >= 1` where `a, b ≈ 2^64` loses the `±1` and the constraint looks
+trivially satisfiable. Second, even with smaller coefficients SCIP's LP
+relaxations can run into numerical instability mid-solve, which can corrupt the
+dual bound and therefore any optimality or infeasibility *proof* built on it.
+Three complementary guards protect against these failure modes.
+
+- **Incumbent verification (always on).** Before SCIP's incumbent is used or
+  persisted, the driver re-reads the original OPB and re-evaluates every
+  constraint with exact `i128` arithmetic. If any constraint is violated — or
+  the check cannot be completed exactly (a coefficient or running activity
+  outside `i128` range, or an unparsable token) — the **entire** SCIP result is
+  discarded: its incumbent, bounds, and verdict are dropped, the warm-start
+  files are removed, and the driver falls through to PRINTEMPS as if SCIP had
+  found nothing. The reason is recorded in `scip_log.txt`
+  (`VERIFICATION REJECTED SCIP RESULT: …`) and `scip_bounds.json` records
+  status `DISCARDED_VERIFICATION`. This catches *false-feasible* answers
+  regardless of cause.
+
+- **Numerical-reliability guard (always on).** SCIP's message output is tee'd to
+  `scip_messages.log` and scanned for the strings `numerical troubles` (the LP
+  solver giving up on a node and falling back to a pseudo-solution) and
+  `out of range` (a coefficient the reader/presolver could not represent). When
+  either appears, SCIP's *proof* — not just one incumbent — is suspect, so the
+  driver demotes the verdict (`OPTIMUM FOUND` → `SATISFIABLE`; `UNSATISFIABLE` is
+  dropped entirely, as both proofs lean on a possibly-corrupt dual bound) and
+  discards the dual-derived information: the dual bound and the fixed-variable
+  list are cleared, because root fixings come partly from dual reductions and a
+  bad dual bound could fix a variable to the wrong value and steer PRINTEMPS away
+  from the optimum. The independently verified incumbent survives as a warm
+  start / fallback (it is a concrete assignment, not a bound), and a plain
+  `SATISFIABLE` verdict is left unchanged — it asserts only feasibility, which
+  the verification above has already confirmed. The trigger is surfaced on stdout
+  as `c scip-printemps: SCIP reported numerical-reliability warnings (…); not
+  trusting its OPTIMUM/UNSAT verdict, handing off to PRINTEMPS` and recorded in
+  `scip_log.txt`. (Detecting these messages requires running SCIP at `FULL`
+  verbosity: the `numerical troubles` lines are info-channel messages gated by
+  `display/verblevel`, not warnings, so a quieter setting would drop them at the
+  source before they ever reached `scip_messages.log`. The console copy is kept
+  silent by the message handler's quiet flag instead.)
+
+- **`intsize` skip (`--scip-max-intsize N`, default `53`).** PB-competition OPB
+  files carry an `intsize=` field in their header comment (the bit length needed
+  to represent, for each constraint and objective function, the sum of the absolute
+  values of all coefficients plus the degree). When it exceeds `N`, the SCIP phase
+  is skipped entirely and the instance is handed straight to PRINTEMPS
+  (`c scip-printemps: skipping SCIP (intsize=… > …)`). The default `53` matches
+  the f64 exact-integer limit. This additionally guards failures that
+  verification *cannot* catch — a wrongly reported `UNSATISFIABLE` or a wrong
+  optimum has no incumbent to re-check — and avoids spending the SCIP budget on
+  instances it cannot handle reliably. Instances with no `intsize` header are
+  never skipped on this basis; the incumbent verification above still applies.
+
+Raise the threshold (e.g. `--scip-max-intsize 63`) to let SCIP attempt
+larger-coefficient instances and rely on verification to reject any bad result;
+set it very high to disable the skip altogether.
+
 ## Persisted state
 
 Under `--save-dir` (default `./.pb-scip-state`):
@@ -77,7 +141,10 @@ Under `--save-dir` (default `./.pb-scip-state`):
   via its `-f` option; otherwise it is written for auditing only.
 - `scip_bounds.json` — `{ status, primal_bound, dual_bound, elapsed_sec,
   exit_code }`. `dual_bound` is captured but is not yet forwarded to
-  PRINTEMPS.
+  PRINTEMPS. `status` is `DISCARDED_VERIFICATION` (with null bounds) when the
+  incumbent failed exact verification; in that case `scip_incumbent.sol` and
+  `scip_fixed_vars.txt` are removed so PRINTEMPS does not warm-start from a
+  rejected solution.
 
 The PRINTEMPS phase writes `printemps_log.txt` and `printemps_log.stderr.log`
 exactly as in `exact-printemps`.
@@ -141,7 +208,7 @@ To build `scip-printemps` you must pick how SCIP is provided:
   distributable binaries): downloads the scipoptsuite source and compiles
   SCIP with `-DSHARED=OFF`, producing a static `libscip.a`. The resulting
   `scip-printemps` only retains dynamic links to common system libraries
-  (glibc, libstdc++, libgomp). Slower to build the first time; the
+  (glibc, libstdc++, libgcc_s, libm). Slower to build the first time; the
   scip-sys build artifacts are cached by `Swatinem/rust-cache` in CI.
 
 ### Recommended path: `./build.sh`
@@ -154,8 +221,9 @@ To build `scip-printemps` you must pick how SCIP is provided:
 - `scip-printemps` is then built with `--features $SCIP_PRINTEMPS_FEATURE`
   (default `scip-from-source`), which compiles SCIP from source with
   `-DSHARED=OFF`. The resulting binary links SCIP/SoPlex statically and
-  keeps glibc/libstdc++/libgomp dynamic. `build.sh` asserts via `ldd` that
-  neither `libscip` nor `libsoplex` is a dynamic dependency.
+  keeps glibc and libstdc++ (along with libgcc_s/libm) dynamic. `build.sh`
+  asserts via `ldd` that neither `libscip` nor `libsoplex` is a dynamic
+  dependency.
 
 Override the SCIP mode by exporting `SCIP_PRINTEMPS_FEATURE=scip-bundled`
 or `SCIP_PRINTEMPS_FEATURE=scip` (the latter requires a system SCIP at
