@@ -1,6 +1,6 @@
 # PRINTEMPS for Pseudo Boolean Competition 2026
 
-[PRINTEMPS](https://snowberryfield.github.io/printemps/) solver for [Pseudo-Boolean Competition 2026](https://www.cril.univ-artois.fr/PB26/) submission.
+[PRINTEMPS](https://snowberryfield.github.io/printemps/) solver for [Pseudo-Boolean Competition 2026](https://www.cril.univ-artois.fr/PB26/) submission. (For the 2025 submission, see [msakai/printemps-pb](https://github.com/msakai/printemps-pb)).
 
 It contains three versions of solvers:
 
