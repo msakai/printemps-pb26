@@ -10,6 +10,8 @@ It contains three versions of solvers:
 
 ## Solver information
 
+[Solver description](description/description.pdf)
+
 ### Solver suggested command line
 
 PRINTEMPS itself:
